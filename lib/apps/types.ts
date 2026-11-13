@@ -41,5 +41,6 @@ export interface KodaApp {
   createdAt: string;
   updatedAt: string;
   userEmail?: string;
+  pinned?: boolean;
 }
 

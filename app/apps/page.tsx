@@ -18,6 +18,7 @@ import {
 } from "lucide-react";
 import { Sidebar } from "@/components/playground/Sidebar";
 import { useUserProfile, type SubscriptionTier } from "@/hooks/use-user-profile";
+import { useSidebarCollapse } from "@/hooks/use-sidebar-collapse";
 import { KodaApp } from "@/lib/apps/types";
 import { getSavedApps, deleteApp } from "@/lib/apps/storage";
 import { Badge } from "@/components/ui/badge";
@@ -26,7 +27,7 @@ import { Input } from "@/components/ui/input";
 export default function MyAppsPage() {
   const router = useRouter();
   const { userEmail } = useUserProfile();
-  const [sidebarCollapsed, setSidebarCollapsed] = useState(false);
+  const { sidebarCollapsed, setSidebarCollapsed, toggleSidebar } = useSidebarCollapse();
   const [apps, setApps] = useState<KodaApp[]>([]);
   const [searchQuery, setSearchQuery] = useState("");
   const [isLoaded, setIsLoaded] = useState(false);
@@ -55,12 +56,12 @@ export default function MyAppsPage() {
   const getTierBadgeStyle = (tier: SubscriptionTier) => {
     switch (tier) {
       case "MAX":
-        return "bg-amber-500/15 text-amber-300 border-amber-500/30";
+        return "bg-[#B5B9F0]/15 text-[#B5B9F0] border-[#B5B9F0]/30";
       case "PRO":
-        return "bg-[#d97736]/20 text-[#f39c6b] border-[#d97736]/30";
+        return "bg-[#2E4540]/40 text-[#408175] border-[#408175]/30";
       case "FREE":
       default:
-        return "bg-[#282a2c] text-[#9aa0a6] border-[#3c4043]/50";
+        return "bg-[#1a1616] text-[#9aa0a6] border-[#241f1f]";
     }
   };
 
@@ -80,23 +81,23 @@ export default function MyAppsPage() {
   };
 
   return (
-    <div className="flex h-screen w-screen overflow-hidden bg-[#131314] text-[#f1f3f4] font-sans">
+    <div className="flex h-screen w-screen overflow-hidden bg-[#0B0909] text-[#f1f3f4] font-sans">
       {/* 1. Left Sidebar */}
       <Sidebar
         collapsed={sidebarCollapsed}
-        onToggleCollapse={() => setSidebarCollapsed(!sidebarCollapsed)}
+        onToggleCollapse={toggleSidebar}
       />
 
       {/* 2. Main Content Area */}
-      <div className="flex-1 flex flex-col min-w-0 h-screen overflow-hidden bg-[#131314]">
+      <div className="flex-1 flex flex-col min-w-0 h-screen overflow-hidden bg-[#0B0909]">
         {/* Top Header */}
-        <header className="h-14 border-b border-[#282a2c] flex items-center justify-between px-6 bg-[#131314] shrink-0">
+        <header className="h-14 border-b border-[#1f1a1a] flex items-center justify-between px-6 bg-[#0B0909] shrink-0">
           <div className="flex items-center gap-3">
             <h2 className="text-base font-semibold tracking-tight text-white flex items-center gap-2">
-              <LayoutGrid className="w-4 h-4 text-[#d97736]" />
+              <LayoutGrid className="w-4 h-4 text-[#408175]" />
               <span>My apps</span>
             </h2>
-            <span className="text-xs text-[#80868b] bg-[#1e1f20] px-2 py-0.5 rounded-full border border-[#282a2c]">
+            <span className="text-xs text-[#80868b] bg-[#141111] px-2 py-0.5 rounded-full border border-[#241f1f]">
               {apps.length} project
             </span>
           </div>
@@ -104,7 +105,7 @@ export default function MyAppsPage() {
           <div className="flex items-center gap-3">
             <Link
               href="/playground/new_chat"
-              className="flex items-center gap-2 px-3.5 py-1.5 rounded-xl bg-[#d97736] text-white font-semibold text-xs hover:bg-[#e58849] transition shadow-md"
+              className="flex items-center gap-2 px-3.5 py-1.5 rounded-xl bg-[#408175] text-white font-semibold text-xs hover:bg-[#4ea092] transition shadow-md shadow-[#408175]/20"
             >
               <Plus className="w-4 h-4" />
               <span>New app</span>
@@ -124,7 +125,7 @@ export default function MyAppsPage() {
                   placeholder="Cari aplikasi atau rancangan..."
                   value={searchQuery}
                   onChange={(e) => setSearchQuery(e.target.value)}
-                  className="pl-9 bg-[#1e1f20] border-[#2e3032] text-xs text-white placeholder:text-[#80868b] rounded-xl h-10 focus-visible:ring-1 focus-visible:ring-[#d97736]"
+                  className="pl-9 bg-[#141111] border-[#241f1f] text-xs text-white placeholder:text-[#80868b] rounded-xl h-10 focus-visible:ring-1 focus-visible:ring-[#408175]"
                 />
               </div>
 
@@ -140,7 +141,7 @@ export default function MyAppsPage() {
                   <div
                     key={app.id}
                     onClick={() => router.push(`/playground/${app.id}`)}
-                    className="group relative rounded-2xl bg-[#1e1f20] border border-[#2e3032] hover:border-[#d97736]/50 p-5 flex flex-col justify-between cursor-pointer transition shadow-lg hover:shadow-2xl"
+                    className="group relative rounded-2xl bg-[#141111] border border-[#241f1f] hover:border-[#408175]/50 p-5 flex flex-col justify-between cursor-pointer transition shadow-lg hover:shadow-2xl"
                   >
                     <div>
                       {/* Top Badges */}
@@ -148,7 +149,7 @@ export default function MyAppsPage() {
                         <div className="flex items-center gap-2">
                           <Badge
                             variant="outline"
-                            className="bg-[#282a2c] text-[#d97736] border-[#3c4043] text-[10.5px] px-2 py-0.5"
+                            className="bg-[#2E4540]/30 text-[#408175] border-[#408175]/30 text-[10.5px] px-2 py-0.5"
                           >
                             <Bot className="w-3 h-3 mr-1" />
                             {app.model}
@@ -186,12 +187,12 @@ export default function MyAppsPage() {
                     </div>
 
                     {/* Footer Meta */}
-                    <div className="pt-3 border-t border-[#282a2c]/60 flex items-center justify-between text-[11px] text-[#80868b]">
+                    <div className="pt-3 border-t border-[#1f1a1a] flex items-center justify-between text-[11px] text-[#80868b]">
                       <div className="flex items-center gap-1.5">
                         <Clock className="w-3.5 h-3.5" />
                         <span>{formatDate(app.updatedAt)}</span>
                       </div>
-                      <div className="flex items-center gap-1 text-[#d97736]">
+                      <div className="flex items-center gap-1 text-[#408175]">
                         <MessageSquare className="w-3.5 h-3.5" />
                         <span>{app.messages?.length || 0} pesan</span>
                       </div>
@@ -201,8 +202,8 @@ export default function MyAppsPage() {
               </div>
             ) : isLoaded ? (
               /* Empty State */
-              <div className="rounded-2xl bg-[#1e1f20]/60 border border-[#2e3032] p-12 text-center max-w-lg mx-auto space-y-4 my-12">
-                <div className="w-14 h-14 rounded-2xl bg-[#282a2c] text-[#d97736] flex items-center justify-center mx-auto shadow-md">
+              <div className="rounded-2xl bg-[#141111] border border-[#241f1f] p-12 text-center max-w-lg mx-auto space-y-4 my-12">
+                <div className="w-14 h-14 rounded-2xl bg-[#2E4540]/30 text-[#408175] border border-[#408175]/30 flex items-center justify-center mx-auto shadow-md">
                   <LayoutGrid className="w-7 h-7" />
                 </div>
                 <div className="space-y-1.5">
@@ -219,7 +220,7 @@ export default function MyAppsPage() {
                   <div className="pt-2">
                     <Link
                       href="/playground/new_chat"
-                      className="inline-flex items-center gap-2 px-4 py-2 rounded-xl bg-[#d97736] text-white font-semibold text-xs hover:bg-[#e58849] transition shadow-md"
+                      className="inline-flex items-center gap-2 px-4 py-2 rounded-xl bg-[#408175] text-white font-semibold text-xs hover:bg-[#4ea092] transition shadow-md shadow-[#408175]/20"
                     >
                       <Plus className="w-4 h-4" />
                       <span>Mulai Chat Baru di Playground</span>

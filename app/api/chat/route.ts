@@ -8,8 +8,18 @@ import {
   getDiscoveryInitialResponse,
   getDiscoveryDecisionsAnswerResponse,
   getDiscoveryStage2AnswerResponse,
+  getDiscoveryReadyForDesignResponse,
   getDiscoveryFinalAnswerResponse,
 } from "@/lib/ai/discovery-helper";
+import {
+  DesignStyle,
+  DESIGN_STYLES,
+  detectChosenDesignStyle,
+  generateDesignSelectionResponse,
+  injectDesignStyleToPrd,
+  isWaitingForDesignStyle,
+} from "@/lib/ai/design-styles";
+import { getAiTool } from "@/lib/ai/tools";
 
 // KODA MASTER SYSTEM INSTRUCTION
 // Grounded in the KODA Product Requirement Document & System Flow Engineering Methodology
@@ -150,34 +160,48 @@ Anda HARUS menerapkan 3 pilar ini dalam setiap interaksi:
 }
 \`\`\`
 
-5. **Tahap Finalisasi & Tombol Susun PRD (Standar Industri Terpenuhi):**
-   - Ketika seluruh pertanyaan wawancara (arsitektur makro & missing requirements No 1 dan 2) atau discovery telah dijawab dan disepakati oleh pengguna:
-   - Nyatakan secara tegas bahwa rancangan PRD telah memenuhi standar industri software engineering (tidak ada lagi asumsi liar, skema data DDL jelas, anti-race condition locking siap, dan alur teruji).
+5. **Tahap Kesiapan PRD & Pemilihan Style Desain UI/UX (SANGAT KRUSIAL):**
+   - Ketika seluruh pertanyaan wawancara kebutuhan atau discovery telah tuntas dijawab oleh pengguna:
+   - DILARANG KERAS LANGSUNG MEN-GENERATE DOKUMEN PRD LENGKAP PADA TAHAP INI!
+   - Anda WAJIB menyatakan dengan tegas:
+     "### Spesifikasi PRD telah siap!"
+   - Jelaskan secara ringkas bahwa seluruh kebutuhan inti, alur sistem, pencegahan race condition, dan skema database telah tuntas terverifikasi dan memenuhi standar industri.
+   - Tawarkan opsi Style Desain UI/UX & Color Palette inspirasi website (dengan kode HEX, tipografi, mood, dan token Tailwind) beserta visual mockup Dribbble (dalam blok kode \`designs-json\`).
+   - Sajikan pilihan style desain tersebut dalam blok kode \`interview-json\` dengan 4 opsi konkret:
+     * Opsi A: Modern Clean SaaS (Indigo & Slate)
+     * Opsi B: Warm Earthy & Terracotta (Amber & Stone)
+     * Opsi C: Sleek Dark Mode (Obsidian & Electric Cyan)
+     * Opsi D: Fresh Organic & Emerald Mint (Green & Botanical)
+   - Jelaskan bahwa setelah pengguna memilih salah satu opsi desain di atas, Anda akan langsung menyusun dokumen PRD lengkap 13 bagian yang memuat sistem desain tersebut beserta tombol download PRD.
+
+6. **Tahap Kompilasi PRD Lengkap (Setelah Desain Dipilih):**
+   - Setelah pengguna memilih style desain (misal: "Opsi A", "Opsi B", "Clean SaaS", "Terracotta", dll):
+   - Masukkan spesifikasi desain terpilih ke dalam Bagian 3 (Design System) dan Bagian 6 (Design Tokens Tailwind CSS).
    - Dokumen PRD WAJIB disusun dengan format standar industri 13 BAGIAN LENGKAP:
      1. Latar belakang dan masalah (1.1 Latar belakang, 1.2 Problem statement, 1.3 Tujuan produk, 1.4 Batasan produk)
-     2. Pengguna, role, dan hak akses (Role matrix Mahasiswa, Pemilik, Admin)
-     3. Ruang lingkup dan fitur fungsional (3.1 FR-01, FR-02, FR-03 dengan link gambar OpenAI static-rsc, 3.2 FR-04 instant booking & mermaid flowchart, 3.3 FR-05, FR-06, FR-07, 3.4 FR-08 WhatsApp, 3.5 FR-09 Autentikasi)
-     4. Business rules (BR-01 s/d BR-14, 4.1 Siklus status booking, 4.2 Aturan kedaluwarsa 24 jam)
+     2. Pengguna, role, dan hak akses (Role matrix Mahasiswa/Pelanggan, Operator/Pemilik, Admin)
+     3. Ruang lingkup dan fitur fungsional (3.0 Design System terpilih, 3.1 Katalog, 3.2 Alur transaksi utama & flowchart, 3.3 Dashboard, 3.4 Bantuan & WhatsApp, 3.5 Autentikasi)
+     4. Business rules (BR-01 s/d BR-14, 4.1 Siklus status pesanan, 4.2 Aturan kedaluwarsa 24 jam)
      5. Acceptance criteria (AC-01 s/d AC-07)
-     6. Arsitektur teknis Laravel 12 (6.1 Struktur modul, 6.2 Rekomendasi stack, 6.3 Struktur folder)
-     7. Rancangan database (7.1 Entitas utama, 7.2 Detail tabel & relasi, 7.3 Kolom penting bookings, 7.4 Integritas data)
+     6. Arsitektur teknis Laravel 12 (6.1 Struktur modul, 6.2 Rekomendasi stack & Tailwind tokens, 6.3 Struktur folder)
+     7. Rancangan database (7.1 Entitas utama, 7.2 Detail tabel & relasi, 7.3 Kolom penting, 7.4 Integritas data & locking)
      8. Backlog pengembangan berprioritas (BK-01 s/d BK-20, Urutan milestone 1-5)
      9. Non-functional requirements (NFR-01 s/d NFR-08)
      10. KPI dan validasi produk
      11. Asumsi dan keputusan yang belum final
      12. Definition of Done (DoD)
      13. Rekomendasi keputusan sebelum coding
-     Kesimpulan: PRD Booking Kos v1.0 ...
+     Kesimpulan: PRD v1.0 ...
    - Di akhir respon Anda, Anda WAJIB menyertakan blok kode JSON khusus dengan tag \`prd-ready-json\` berikut:
 \`\`\`prd-ready-json
 {
   "title": "Spesifikasi PRD Memenuhi Standar Industri",
   "appName": "Nama Aplikasi yang Dirancang",
-  "summary": "Seluruh 13 bagian PRD, diagram alur sistem, skema relasional database, dan backlog MVP telah tuntas terverifikasi.",
+  "summary": "Seluruh 13 bagian PRD, diagram alur sistem, skema relasional database, dan design system telah tuntas terverifikasi.",
   "buttonText": "Download PRD (.md)"
 }
 \`\`\`
-   - Blok ini akan memicu munculnya tombol aksi interaktif langsung di chat pengguna untuk mengunduh dokumen PRD lengkap dalam format .md (Markdown) atau menyalin teks PRD.
+   - Blok ini akan memicu munculnya tombol aksi interaktif langsung di chat pengguna untuk mengunduh dokumen PRD lengkap dalam format .md (Markdown).
 
 ---
 
@@ -196,7 +220,8 @@ Anda HARUS menerapkan 3 pilar ini dalam setiap interaksi:
 2. **Struktur Respon Bertahap:**
    - **Tahap 1 (Konsep Awal):** Ringkasan sistem, Wawancara makro (\`interview-json\`), dan 3 desain visual Dribbble (\`designs-json\`).
    - **Tahap 2 (Arsitektur Dipilih):** Ringkasan modul, Diagram alur (\`flow-json\`), dan Missing Requirements Detector (2 pertanyaan dengan masing-masing 3 opsi A, B, C dalam \`interview-json\`).
-   - **Tahap 3 (Kebutuhan Selesai):** Validasi kesiapan standar industri, 13 bagian PRD lengkap, serta blok kode \`prd-ready-json\`.
+   - **Tahap 3 (Kebutuhan Selesai & PRD Siap):** DILARANG LANGSUNG MEMBUAT PRD! Nyatakan: "Spesifikasi PRD telah siap!" dan tawarkan 4 opsi Style Desain & Color Palette (\`interview-json\`) serta mockup UI (\`designs-json\`).
+   - **Tahap 4 (Desain Dipilih & Kompilasi PRD):** Setelah pengguna memilih desain, masukkan spesifikasi desain ke PRD (Bagian 3 & 6), lalu susun PRD 13 BAGIAN LENGKAP dengan blok \`prd-ready-json\` di akhir dokumen.
 - Gunakan Bahasa Indonesia yang lugas, profesional, cerdas, dan membimbing tanpa emoji bertebaran.`;
 
 function ensureMissingRequirementsOptions(text: string): string {
@@ -257,45 +282,40 @@ function ensurePrdReadyBlock(text: string, messages: any[], lastUserMessage: str
     return text;
   }
 
-  // Do not append if the text is actively asking questions via questionnaire blocks
+  // Do not append if the text is actively asking questions via questionnaire blocks or design selection
   if (
     text.includes("```interview-json") ||
     text.includes("```discovery-decisions-json") ||
     text.includes("```discovery-stage2-json") ||
     text.includes("```discovery-final-json") ||
-    text.includes("```discovery-stage3-json")
+    text.includes("```discovery-stage3-json") ||
+    text.includes("Pilihan Style Desain & Color Palette")
   ) {
     return text;
   }
 
-  const lowerMsg = (lastUserMessage || "").toLowerCase();
-  const userMessages = messages.filter((m: any) => m.role === "user");
+  const isContextWaiting = isWaitingForDesignStyle(messages);
+  const chosenStyle = detectChosenDesignStyle(lastUserMessage, isContextWaiting);
+  const hasPreviouslySelectedDesign = messages.some((m: any) =>
+    m.role === "user" && detectChosenDesignStyle(m.content || "", true)
+  );
 
-  const hasAnsweredQ1Q2 =
-    (lowerMsg.includes("1.") && lowerMsg.includes("2.")) ||
-    (lowerMsg.includes("1:") && lowerMsg.includes("2:")) ||
-    (lowerMsg.includes("opsi") && (lowerMsg.includes("1") || lowerMsg.includes("2"))) ||
-    (userMessages.length >= 3 && (lowerMsg.includes("a") || lowerMsg.includes("b") || lowerMsg.includes("c")));
+  // If user has NOT chosen a design style yet, NEVER append prd-ready-json!
+  if (!chosenStyle && !hasPreviouslySelectedDesign) {
+    return text;
+  }
 
-  const textMentionsCompletion =
-    text.toLowerCase().includes("standar industri") ||
-    text.toLowerCase().includes("siap disusun") ||
-    text.toLowerCase().includes("seluruh kebutuhan") ||
-    (text.toLowerCase().includes("lengkap") && text.toLowerCase().includes("prd"));
+  const effectiveStyle = chosenStyle || DESIGN_STYLES.A;
 
-  if (hasAnsweredQ1Q2 || textMentionsCompletion) {
-    const readyBlock = `\n\n\`\`\`prd-ready-json
+  const readyBlock = `\n\n\`\`\`prd-ready-json
 {
   "title": "Spesifikasi PRD Memenuhi Standar Industri",
   "appName": "Arsitektur Sistem Terverifikasi",
-  "summary": "Seluruh 13 bagian PRD, diagram alur sistem, skema database relasional, dan backlog MVP telah tuntas terverifikasi.",
+  "summary": "Seluruh 13 bagian PRD, alur sistem, skema database relasional, dan design system (${effectiveStyle.name}) telah tuntas terverifikasi.",
   "buttonText": "Download PRD (.md)"
 }
 \`\`\`\n`;
-    return text + readyBlock;
-  }
-
-  return text;
+  return text + readyBlock;
 }
 
 function ensureComplete13SectionPrd(
@@ -308,13 +328,25 @@ function ensureComplete13SectionPrd(
     return text;
   }
 
-  // Do not append if actively asking questions
+  // Do not append if actively asking questions or showing design style selection
   if (
     text.includes("```interview-json") ||
     text.includes("```discovery-decisions-json") ||
     text.includes("```discovery-stage2-json") ||
-    text.includes("```discovery-final-json")
+    text.includes("```discovery-final-json") ||
+    text.includes("Pilihan Style Desain & Color Palette")
   ) {
+    return text;
+  }
+
+  const isContextWaiting = isWaitingForDesignStyle(messages);
+  const chosenStyle = detectChosenDesignStyle(lastUserMessage, isContextWaiting);
+  const hasPreviouslySelectedDesign = messages.some((m: any) =>
+    m.role === "user" && detectChosenDesignStyle(m.content || "", true)
+  );
+
+  // If user has NOT chosen a design style yet, do not generate PRD!
+  if (!chosenStyle && !hasPreviouslySelectedDesign) {
     return text;
   }
 
@@ -331,8 +363,10 @@ function ensureComplete13SectionPrd(
     return text;
   }
 
+  const effectiveStyle = chosenStyle || DESIGN_STYLES.A;
   const ctx = extractDiscoveryContext(messages, lastUserMessage);
-  const prdMarkdown = generateDynamicPrdDocument(ctx);
+  let prdMarkdown = generateDynamicPrdDocument(ctx);
+  prdMarkdown = injectDesignStyleToPrd(prdMarkdown, effectiveStyle);
 
   if (text.includes("```prd-ready-json")) {
     return text.replace("```prd-ready-json", `\n\n${prdMarkdown}\n\n\`\`\`prd-ready-json`);
@@ -342,7 +376,7 @@ function ensureComplete13SectionPrd(
 {
   "title": "Spesifikasi PRD Memenuhi Standar Industri",
   "appName": "${ctx.idea}",
-  "summary": "Seluruh 13 bagian PRD ${ctx.idea}, alur sistem, skema database relasional, dan backlog MVP telah tuntas terverifikasi.",
+  "summary": "Seluruh 13 bagian PRD ${ctx.idea}, alur sistem, skema database relasional, dan design system (${effectiveStyle.name}) telah tuntas terverifikasi.",
   "buttonText": "Download PRD (.md)"
 }
 \`\`\`\n`;
@@ -359,6 +393,7 @@ export async function POST(req: Request) {
       model = "Gemini 3.5 Flash",
       thinkingLevel = "Medium",
       groundingSearch = true,
+      customConfig = null,
     } = body;
 
     const requestStartTime = Date.now();
@@ -368,10 +403,16 @@ export async function POST(req: Request) {
     const lastUserAttachments = lastUserObj?.attachments || [];
 
     // Determine System Prompt based on selected tool
+    const effectiveToolId =
+      toolId === "product_management" || toolId === "prd_architect"
+        ? "prd_builder"
+        : toolId;
+    const toolObj = getAiTool(effectiveToolId);
+
     let baseInstruction = "";
-    if (toolId === "prd_builder") {
+    if (effectiveToolId === "prd_builder") {
       baseInstruction = KODA_SYSTEM_INSTRUCTION;
-    } else if (toolId === "designer") {
+    } else if (effectiveToolId === "designer") {
       baseInstruction = `Anda adalah KODA UI/UX Architect & Design Systems Lead kelas dunia.
 
 ### MISI ANDA
@@ -385,12 +426,14 @@ Membantu pengguna merancang antarmuka aplikasi yang menawan, fungsional, dan ses
 5. **Micro-interactions & UX States:** Memikirkan loading skeleton, empty states, hover/active states, dan form feedback validation.
 
 Gunakan format teks rapi dengan Markdown bersih tanpa emoji berlebihan di judul/heading.`;
-    } else if (toolId === "fisika") {
+    } else if (effectiveToolId === "fisika") {
       baseInstruction = `Anda adalah AI Physics & Computational Science Specialist.
 Anda membantu pengguna memahami fenomena fisika, menurunkan rumus matematis, menyusun logika simulasi fisika untuk game/aplikasi, serta menjelaskan kalkulasi mekanika, termodinamika, elektromagnetisme, dan fisika modern secara runut dengan notasi LaTeX.`;
-    } else if (toolId === "astronomi") {
+    } else if (effectiveToolId === "astronomi") {
       baseInstruction = `Anda adalah AI Astrophysicist & Cosmologist.
 Anda membantu pengguna memahami fenomena astronomi, mekanika orbit benda langit (Keplerian orbit), astrofotografi, bintang neutron, lubang hitam, dan data observatorium teleskop luar angkasa dengan akurat dan memukau.`;
+    } else if (toolObj && toolObj.systemPrompt) {
+      baseInstruction = toolObj.systemPrompt;
     } else {
       // General conversation mode (Santai, tenang, dan alami seperti ChatGPT / GPT-4o)
       baseInstruction = `Anda adalah asisten AI yang cerdas, bersahabat, dan berpikiran terbuka, dengan gaya komunikasi yang kalem, santai, dan alami seperti ChatGPT (GPT-4o).
@@ -404,7 +447,7 @@ Prinsip Komunikasi Anda:
     }
 
     let dynamicDribbbleDesigns: DribbbleDesignItem[] = [];
-    if (toolId === "prd_builder") {
+    if (effectiveToolId === "prd_builder") {
       dynamicDribbbleDesigns = await searchDribbbleDesigns(lastUserMessage || "student portal ui dashboard", 3);
     }
 
@@ -430,11 +473,80 @@ ATURAN SANGAT PENTING:
 - Sambungkan konteks dari Obrolan Utama ke dalam Obrolan Anak ini. Jangan meminta pengguna mengulang apa yang telah dibahas di Obrolan Utama.`;
     }
 
-    if (toolId === "prd_builder" && dynamicDribbbleDesigns.length > 0) {
+    if (effectiveToolId === "prd_builder" && dynamicDribbbleDesigns.length > 0) {
       effectiveSystemInstruction += `\n\n### REFERENSI WAJIB DESAIN UI/UX DRIBBLE (GUNAKAN DI BLOK designs-json):
 Gunakan referensi desain antarmuka Dribbble asli berikut di dalam blok kode designs-json Anda:
 ${JSON.stringify({ title: "Inspirasi Desain Antarmuka Aplikasi (Dribbble)", designs: dynamicDribbbleDesigns }, null, 2)}
 DILARANG KERAS menggunakan foto manusia atau gambar Unsplash! Gambar WAJIB berupa mockup antarmuka aplikasi dari Dribbble di atas.`;
+    }
+
+    // 0. If Custom Model Configuration is provided (BYO API Key & Endpoint)
+    if (customConfig && customConfig.endpointUrl && customConfig.apiKey) {
+      try {
+        let endpoint = customConfig.endpointUrl.trim().replace(/\/+$/, "");
+        if (!endpoint.endsWith("/chat/completions")) {
+          endpoint = `${endpoint}/chat/completions`;
+        }
+
+        const fullSystemPrompt = [effectiveSystemInstruction, systemInstructions].filter(Boolean).join("\n\n");
+
+        const formattedMessages: Array<{ role: string; content: string }> = [];
+        if (fullSystemPrompt) {
+          formattedMessages.push({ role: "system", content: fullSystemPrompt });
+        }
+
+        if (parentMessages && parentMessages.length > 0) {
+          formattedMessages.push({
+            role: "system",
+            content: `[Konteks Percakapan Sebelumnya]:\n${parentMessages
+              .map((p: any) => `${p.role}: ${p.content}`)
+              .join("\n")}`,
+          });
+        }
+
+        for (const m of messages) {
+          formattedMessages.push({
+            role: m.role === "model" ? "assistant" : "user",
+            content: m.content || "",
+          });
+        }
+
+        const payload = {
+          model: customConfig.modelName || "gpt-4o",
+          messages: formattedMessages,
+          temperature: 0.7,
+        };
+
+        const customRes = await fetch(endpoint, {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/json",
+            Authorization: `Bearer ${customConfig.apiKey}`,
+          },
+          body: JSON.stringify(payload),
+        });
+
+        if (!customRes.ok) {
+          const errBody = await customRes.text();
+          throw new Error(`HTTP ${customRes.status}: ${errBody.slice(0, 300)}`);
+        }
+
+        const customData = await customRes.json();
+        const content = customData.choices?.[0]?.message?.content || "";
+
+        return NextResponse.json({
+          content,
+          thought: `Menghubungkan ke ${customConfig.modelName} melalui ${customConfig.endpointUrl}. Respon berhasil diterima dalam ${Date.now() - requestStartTime}ms.`,
+          sources: [],
+        });
+      } catch (err: any) {
+        console.warn("Custom model call failed:", err);
+        return NextResponse.json({
+          content: `⚠️ **Gagal terhubung ke Custom AI Endpoint:**\n\n- **Model:** \`${customConfig.modelName}\`\n- **Endpoint:** \`${customConfig.endpointUrl}\`\n- **Error:** ${err?.message || err}\n\n*Tips: Pastikan URL endpoint berformat OpenAI-compatible (misal: \`https://api.openai.com/v1\` atau \`https://api.deepseek.com/v1\`) dan API Key Anda valid serta memiliki kuota aktif.*`,
+          thought: "Koneksi ke custom model gagal.",
+          sources: [],
+        });
+      }
     }
 
     // 1. If Gemini API Key is available, use real Gemini SDK with model fallback
@@ -527,7 +639,7 @@ DILARANG KERAS menggunakan foto manusia atau gambar Unsplash! Gambar WAJIB berup
         }
 
         // Adaptive timeouts: quick 8s per-model for chat/halo, 25s for large PRD payloads
-        const isPrd = toolId === "prd_builder";
+        const isPrd = effectiveToolId === "prd_builder";
         const totalTimeoutMs = isPrd ? 60000 : 20000;
         const perModelTimeoutMs = isPrd ? 25000 : 8000;
 
@@ -567,7 +679,7 @@ DILARANG KERAS menggunakan foto manusia atau gambar Unsplash! Gambar WAJIB berup
         let replyText = response.text || "Tidak ada teks yang dihasilkan.";
         
         // Enforce authentic Dribbble UI screenshots in designs-json
-        if (toolId === "prd_builder" && dynamicDribbbleDesigns.length > 0) {
+        if (effectiveToolId === "prd_builder" && dynamicDribbbleDesigns.length > 0) {
           replyText = replyText.replace(/```(?:designs-json|dribbble-json)[\s\S]*?```/g, () => {
             return "```designs-json\n" + JSON.stringify({
               title: "Inspirasi Desain Antarmuka Aplikasi (Dribbble)",
@@ -577,15 +689,36 @@ DILARANG KERAS menggunakan foto manusia atau gambar Unsplash! Gambar WAJIB berup
         }
 
         // Enforce 3 options for Question 1 and 3 options for Question 2 in Missing Requirements, and PRD Ready block
-        if (toolId === "prd_builder") {
+        if (effectiveToolId === "prd_builder") {
           replyText = ensureMissingRequirementsOptions(replyText);
+
+          // Check if Gemini outputted PRD or completion before design style was selected
+          const isContextWaiting = isWaitingForDesignStyle(messages);
+          const chosenStyle = detectChosenDesignStyle(lastUserMessage, isContextWaiting);
+          const hasPreviouslySelectedDesign = messages.some((m: any) =>
+            m.role === "user" && detectChosenDesignStyle(m.content || "", true)
+          );
+
+          if (!chosenStyle && !hasPreviouslySelectedDesign) {
+            // If Gemini prematurely tried to generate PRD or prd-ready-json before design style was chosen
+            if (
+              replyText.includes("prd-ready-json") ||
+              (replyText.includes("## 1. Latar belakang") && replyText.includes("## 2. Pengguna")) ||
+              (replyText.toLowerCase().includes("standar industri") && !replyText.includes("interview-json"))
+            ) {
+              const ctx = extractDiscoveryContext(messages, lastUserMessage);
+              const readyResp = getDiscoveryReadyForDesignResponse(ctx, dynamicDribbbleDesigns);
+              replyText = readyResp.content;
+            }
+          }
+
           replyText = ensurePrdReadyBlock(replyText, messages, lastUserMessage);
           replyText = ensureComplete13SectionPrd(replyText, messages, lastUserMessage);
         }
 
         const elapsed = ((Date.now() - requestStartTime) / 1000).toFixed(1) + "s";
 
-        const dynamicThought = toolId === "prd_builder"
+        const dynamicThought = effectiveToolId === "prd_builder"
           ? `KODA AI Requirement Engine menganalisis alur sistem dengan thinking level ${thinkingLevel}. Mengidentifikasi aktor, alur proses, dan mendeteksi edge cases.`
           : `Memproses pertanyaan dengan gaya yang santai, tenang, dan natural.`;
 
@@ -609,7 +742,7 @@ DILARANG KERAS menggunakan foto manusia atau gambar Unsplash! Gambar WAJIB berup
       ? ["KODA Standards 2026", "Grounded Intelligence"]
       : [];
 
-    if (toolId === "prd_builder") {
+    if (effectiveToolId === "prd_builder") {
       if (lastUserAttachments.length > 0) {
         const fileNames = lastUserAttachments.map((a: { name?: string }) => a.name || "File").join(", ");
         thought = `Menganalisis dokumen/gambar yang diunggah (${fileNames}) untuk kebutuhan PRD & alur sistem.`;
@@ -687,8 +820,18 @@ ${lastUserMessage ? `Terkait pertanyaan Anda: *"${lastUserMessage}"*, kami dapat
           lower.includes("mohon susun prd lengkap") ||
           (userTurns.length >= 2 && !isDiscoveryInitial && !isDiscoveryDecisionsAnswer && !isDiscoveryStage2Answer);
 
-        if (isDiscoveryFinalAnswer) {
-          const resp = getDiscoveryFinalAnswerResponse(discoveryContext);
+        const isContextWaiting = isWaitingForDesignStyle(messages);
+        const chosenDesignStyle = detectChosenDesignStyle(lastUserMessage, isContextWaiting);
+
+        if (chosenDesignStyle) {
+          // User has selected a design style! Generate the complete 13-section PRD with the chosen design tokens & system
+          const resp = getDiscoveryFinalAnswerResponse(discoveryContext, chosenDesignStyle);
+          thought = resp.thought;
+          content = resp.content;
+        } else if (isDiscoveryFinalAnswer) {
+          // Requirements are complete, but design style has not been selected yet.
+          // Announce that PRD is ready and present the design style & color palette selection.
+          const resp = getDiscoveryReadyForDesignResponse(discoveryContext, dynamicDribbbleDesigns);
           thought = resp.thought;
           content = resp.content;
         } else if (isDiscoveryStage2Answer) {
@@ -717,7 +860,7 @@ Silakan isi formulir **Product Discovery** di atas atau jelaskan langsung konsep
 
 Apa ide aplikasi atau sistem yang ingin Anda rancang alurnya hari ini?`;
       }
-    } else if (toolId === "designer") {
+    } else if (effectiveToolId === "designer") {
       thought = `Menganalisis kebutuhan desain UI/UX untuk: "${lastUserMessage.slice(0, 40)}...". Menyusun rekomendasi layout, token warna, typography, dan komponen Tailwind CSS.`;
       content = `Halo! Saya **KODA UI/UX Architect**. Konsep antarmuka untuk **"${lastUserMessage.slice(0, 50)}"** siap kita rancang dengan standar visual modern.
 
@@ -729,19 +872,19 @@ Apa ide aplikasi atau sistem yang ingin Anda rancang alurnya hari ini?`;
 - **Border Radius:** \`rounded-2xl\` untuk cards utama, \`rounded-lg\` untuk interactive buttons.
 
 ### 2. Color Palette Token
-- **Background Canvas:** \`#131314\` (Deep Matte Charcoal)
-- **Surface Card:** \`#1e1f20\` (Card Elevated) / \`#282a2c\` (Hover Surface)
-- **Primary Accent:** \`#d97736\` (Claude Warm Orange) / \`#f28b82\` (Accent Coral)
+- **Background Canvas:** \`#0B0909\` (Deep Obsidian Black)
+- **Surface Card:** \`#141111\` (Card Elevated) / \`#1a1616\` (Hover Surface)
+- **Primary Accent:** \`#408175\` (Sage Mint) / \`#2E4540\` (Pine Teal) / \`#B5B9F0\` (Lavender)
 - **Text:** \`#f1f3f4\` (Primary), \`#9aa0a6\` (Muted / Subtitle)
 
 ### 3. Rekomendasi Struktur Komponen (Tailwind CSS)
 \`\`\`html
-<div class="min-h-screen bg-[#131314] text-[#f1f3f4] p-6">
+<div class="min-h-screen bg-[#0B0909] text-[#f1f3f4] p-6">
   <div class="max-w-6xl mx-auto space-y-6">
     <!-- Header -->
-    <header class="flex items-center justify-between pb-4 border-b border-[#282a2c]">
+    <header class="flex items-center justify-between pb-4 border-b border-[#241f1f]">
       <h1 class="text-xl font-bold tracking-tight">Analytics Dashboard</h1>
-      <button class="bg-[#d97736] text-white px-4 py-2 rounded-xl text-xs font-semibold hover:opacity-90 transition">
+      <button class="bg-[#408175] text-white px-4 py-2 rounded-xl text-xs font-semibold hover:opacity-90 transition">
         + Export Data
       </button>
     </header>
@@ -750,12 +893,19 @@ Apa ide aplikasi atau sistem yang ingin Anda rancang alurnya hari ini?`;
 \`\`\`
 
 Apakah ada preferensi warna brand atau komponen spesifik (seperti chart, sidebar, atau form modal) yang ingin kita perdalam?`;
-    } else if (toolId === "fisika") {
+    } else if (effectiveToolId === "fisika") {
       thought = "Menganalisis kalkulasi fisika dan pemodelan matematis.";
       content = `Halo! Saya siap membantu Anda menurunkan rumus, menganalisis gerak, termodinamika, atau mekanika kuantum dengan notasi LaTeX yang presisi. Apa topik fisika yang ingin kita bahas?`;
-    } else if (toolId === "astronomi") {
+    } else if (effectiveToolId === "astronomi") {
       thought = "Menganalisis fenomena astrofisika dan mekanika orbit kosmik.";
       content = `Halo! Mari jelajahi fenomena kosmik, kalkulasi orbit satelit/planet, atau astrofisika luar angkasa. Apa topik yang ingin Anda eksplorasi?`;
+    } else if (toolObj) {
+      thought = `${toolObj.name} memproses permintaan Anda...`;
+      content = `Halo! Saya siap membantu Anda menggunakan modul **${toolObj.name}**.\n\n${
+        lastUserMessage
+          ? `Terkait pertanyaan Anda: "${lastUserMessage}", mari kita diskusikan solusinya secara terstruktur.`
+          : toolObj.shortDesc
+      }`;
     } else {
       // General conversation mode (Obrolan biasa - santai & kalem ala GPT)
       thought = "Menanggapi dalam mode obrolan biasa dengan gaya santai, tenang, dan bersahabat.";

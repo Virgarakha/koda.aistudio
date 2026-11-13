@@ -122,15 +122,15 @@ export function SystemInstructionsSidebar({
       />
 
       {/* Slide-in Sidebar (Right Side) */}
-      <aside className="fixed top-0 right-0 z-50 w-full sm:w-[480px] md:w-[500px] h-screen bg-[#18191a] border-l border-[#282a2c] text-[#c4c7c5] flex flex-col shadow-2xl animate-in slide-in-from-right duration-200 select-none">
+      <aside className="fixed top-0 right-0 z-50 w-full sm:w-[480px] md:w-[500px] h-screen bg-[#0B0909] border-l border-[#1f1a1a] text-[#c4c7c5] flex flex-col shadow-2xl animate-in slide-in-from-right duration-200 select-none">
         {/* Header */}
-        <div className="flex items-center justify-between px-5 py-4 border-b border-[#282a2c]">
+        <div className="flex items-center justify-between px-5 py-4 border-b border-[#1f1a1a]">
           <h2 className="text-[15px] font-semibold text-[#f1f3f4] tracking-tight">
             System instructions
           </h2>
           <button
             onClick={onClose}
-            className="p-1 text-[#9aa0a6] hover:text-[#f1f3f4] hover:bg-[#282a2c] rounded-md transition"
+            className="p-1 text-[#9aa0a6] hover:text-[#f1f3f4] hover:bg-[#1a1616] rounded-md transition"
             title="Close"
           >
             <X className="w-4 h-4" />
@@ -144,10 +144,10 @@ export function SystemInstructionsSidebar({
             <button
               type="button"
               onClick={() => setIsDropdownOpen(!isDropdownOpen)}
-              className="w-full flex items-center justify-between bg-[#212224] hover:bg-[#282a2c] border border-[#2e3032] hover:border-[#3c4043] rounded-lg px-3.5 py-2.5 text-xs text-[#f1f3f4] font-medium transition"
+              className="w-full flex items-center justify-between bg-[#141111] hover:bg-[#1a1616] border border-[#241f1f] hover:border-[#408175]/60 rounded-lg px-3.5 py-2.5 text-xs text-[#f1f3f4] font-medium transition"
             >
               <div className="flex items-center gap-2">
-                <span className="text-[#a8c7fa]">+</span>
+                <span className="text-[#408175]">+</span>
                 <span>
                   {selectedInstructionId !== "custom" && instructionTitle
                     ? instructionTitle
@@ -159,17 +159,17 @@ export function SystemInstructionsSidebar({
 
             {/* Dropdown Menu */}
             {isDropdownOpen && (
-              <div className="absolute top-full left-0 right-0 mt-1.5 bg-[#212224] border border-[#2e3032] rounded-xl shadow-xl z-10 py-1.5 overflow-hidden animate-in fade-in-50 duration-150">
+              <div className="absolute top-full left-0 right-0 mt-1.5 bg-[#141111] border border-[#241f1f] rounded-xl shadow-xl z-10 py-1.5 overflow-hidden animate-in fade-in-50 duration-150">
                 <button
                   type="button"
                   onClick={handleCreateNew}
-                  className="w-full flex items-center gap-2 px-3.5 py-2 text-xs text-[#a8c7fa] hover:bg-[#282a2c] transition font-medium"
+                  className="w-full flex items-center gap-2 px-3.5 py-2 text-xs text-[#408175] hover:bg-[#1a1616] transition font-medium"
                 >
                   <Plus className="w-3.5 h-3.5" />
                   <span>+ Create new instruction</span>
                 </button>
 
-                <div className="border-t border-[#2e3032]/70 my-1" />
+                <div className="border-t border-[#241f1f] my-1" />
 
                 {instructionsList.map((item) => {
                   const isCurrent = selectedInstructionId === item.id;
@@ -180,12 +180,12 @@ export function SystemInstructionsSidebar({
                       onClick={() => handleSelectSaved(item)}
                       className={`w-full flex items-center justify-between px-3.5 py-2 text-xs transition ${
                         isCurrent
-                          ? "bg-[#282a2c] text-[#f1f3f4] font-medium"
-                          : "text-[#c4c7c5] hover:bg-[#282a2c] hover:text-[#f1f3f4]"
+                          ? "bg-[#1a1616] text-[#f1f3f4] font-medium"
+                          : "text-[#c4c7c5] hover:bg-[#1a1616] hover:text-[#f1f3f4]"
                       }`}
                     >
                       <span className="truncate pr-2">{item.title}</span>
-                      {isCurrent && <Check className="w-3.5 h-3.5 text-[#d97736]" />}
+                      {isCurrent && <Check className="w-3.5 h-3.5 text-[#408175]" />}
                     </button>
                   );
                 })}
@@ -200,13 +200,13 @@ export function SystemInstructionsSidebar({
               value={instructionTitle}
               onChange={(e) => handleTitleChange(e.target.value)}
               placeholder="Title"
-              className="flex-1 bg-[#212224] border border-[#2e3032] focus:border-[#d97736] focus:outline-none rounded-lg px-3.5 py-2 text-xs text-[#f1f3f4] placeholder:text-[#80868b] transition"
+              className="flex-1 bg-[#141111] border border-[#241f1f] focus:border-[#408175] focus:outline-none rounded-lg px-3.5 py-2 text-xs text-[#f1f3f4] placeholder:text-[#80868b] transition"
             />
             {selectedInstructionId !== "custom" && (
               <button
                 type="button"
                 onClick={handleDeleteCurrent}
-                className="p-2 text-[#80868b] hover:text-[#f28b82] hover:bg-[#282a2c] border border-[#2e3032] rounded-lg transition"
+                className="p-2 text-[#80868b] hover:text-[#f28b82] hover:bg-[#1a1616] border border-[#241f1f] rounded-lg transition"
                 title="Delete instruction"
               >
                 <Trash2 className="w-4 h-4" />
@@ -220,18 +220,18 @@ export function SystemInstructionsSidebar({
               value={systemInstructions}
               onChange={(e) => handleContentChange(e.target.value)}
               placeholder="Optional tone and style instructions for the model"
-              className="flex-1 w-full min-h-[360px] bg-[#212224] border border-[#2e3032] focus:border-[#d97736] focus:outline-none rounded-xl p-4 text-xs text-[#e3e3e3] placeholder:text-[#80868b] leading-relaxed resize-none transition"
+              className="flex-1 w-full min-h-[360px] bg-[#141111] border border-[#241f1f] focus:border-[#408175] focus:outline-none rounded-xl p-4 text-xs text-[#e3e3e3] placeholder:text-[#80868b] leading-relaxed resize-none transition"
             />
           </div>
         </div>
 
         {/* Footer info: "Instructions are saved in local storage." */}
-        <div className="px-5 py-3.5 border-t border-[#282a2c] bg-[#161718] text-[11px] text-[#80868b] flex items-center justify-between">
+        <div className="px-5 py-3.5 border-t border-[#1f1a1a] bg-[#0B0909] text-[11px] text-[#80868b] flex items-center justify-between">
           <span>Instructions are saved in local storage.</span>
           <button
             type="button"
             onClick={onClose}
-            className="px-3 py-1 bg-[#282a2c] hover:bg-[#35373a] text-[#f1f3f4] rounded-md font-medium text-xs transition"
+            className="px-3 py-1 bg-[#141111] hover:bg-[#1a1616] text-[#f1f3f4] border border-[#241f1f] rounded-md font-medium text-xs transition"
           >
             Done
           </button>

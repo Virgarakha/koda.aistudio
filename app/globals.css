@@ -8,6 +8,7 @@
   --color-background: var(--background);
   --color-foreground: var(--foreground);
   --font-sans: var(--font-sans);
+  --font-serif: var(--font-serif);
   --font-mono: var(--font-geist-mono);
   --font-heading: var(--font-sans);
   --color-sidebar-ring: var(--sidebar-ring);
@@ -84,37 +85,37 @@
 }
 
 .dark {
-  --background: oklch(0.145 0 0);
-  --foreground: oklch(0.985 0 0);
-  --card: oklch(0.205 0 0);
-  --card-foreground: oklch(0.985 0 0);
-  --popover: oklch(0.205 0 0);
-  --popover-foreground: oklch(0.985 0 0);
-  --primary: oklch(0.922 0 0);
-  --primary-foreground: oklch(0.205 0 0);
-  --secondary: oklch(0.269 0 0);
-  --secondary-foreground: oklch(0.985 0 0);
-  --muted: oklch(0.269 0 0);
-  --muted-foreground: oklch(0.708 0 0);
-  --accent: oklch(0.269 0 0);
-  --accent-foreground: oklch(0.985 0 0);
+  --background: #0B0909;
+  --foreground: #f1f3f4;
+  --card: #141111;
+  --card-foreground: #f1f3f4;
+  --popover: #141111;
+  --popover-foreground: #f1f3f4;
+  --primary: #408175;
+  --primary-foreground: #ffffff;
+  --secondary: #2E4540;
+  --secondary-foreground: #f1f3f4;
+  --muted: #1a1616;
+  --muted-foreground: #9aa0a6;
+  --accent: #B5B9F0;
+  --accent-foreground: #0B0909;
   --destructive: oklch(0.704 0.191 22.216);
-  --border: oklch(1 0 0 / 10%);
-  --input: oklch(1 0 0 / 15%);
-  --ring: oklch(0.556 0 0);
-  --chart-1: oklch(0.87 0 0);
-  --chart-2: oklch(0.556 0 0);
-  --chart-3: oklch(0.439 0 0);
-  --chart-4: oklch(0.371 0 0);
-  --chart-5: oklch(0.269 0 0);
-  --sidebar: oklch(0.205 0 0);
-  --sidebar-foreground: oklch(0.985 0 0);
-  --sidebar-primary: oklch(0.488 0.243 264.376);
-  --sidebar-primary-foreground: oklch(0.985 0 0);
-  --sidebar-accent: oklch(0.269 0 0);
-  --sidebar-accent-foreground: oklch(0.985 0 0);
-  --sidebar-border: oklch(1 0 0 / 10%);
-  --sidebar-ring: oklch(0.556 0 0);
+  --border: #241f1f;
+  --input: #241f1f;
+  --ring: #408175;
+  --chart-1: #408175;
+  --chart-2: #2E4540;
+  --chart-3: #B5B9F0;
+  --chart-4: #52a193;
+  --chart-5: #1c2b28;
+  --sidebar: #0B0909;
+  --sidebar-foreground: #f1f3f4;
+  --sidebar-primary: #408175;
+  --sidebar-primary-foreground: #ffffff;
+  --sidebar-accent: #191515;
+  --sidebar-accent-foreground: #f1f3f4;
+  --sidebar-border: #241f1f;
+  --sidebar-ring: #408175;
 }
 
 @layer base {
@@ -132,7 +133,7 @@
 /* Custom Minimalist Scrollbar: Transparent Track & #111 Thumb Stick */
 html, body, div, aside, main, pre, textarea, * {
   scrollbar-width: thin !important;
-  scrollbar-color: #222222 transparent !important;
+  scrollbar-color: #241f1f transparent !important;
 }
 
 *::-webkit-scrollbar,
@@ -150,14 +151,14 @@ html, body, div, aside, main, pre, textarea, * {
 
 *::-webkit-scrollbar-thumb,
 ::-webkit-scrollbar-thumb {
-  background-color: #262626 !important;
+  background-color: #1f1b1b !important;
   border-radius: 9999px !important;
   border: none !important;
 }
 
 *::-webkit-scrollbar-thumb:hover,
 ::-webkit-scrollbar-thumb:hover {
-  background-color: #383838 !important;
+  background-color: #2e2828 !important;
 }
 
 *::-webkit-scrollbar-corner,
@@ -182,9 +183,103 @@ html, body, div, aside, main, pre, textarea, * {
   display: inline-block;
   width: 8px;
   height: 16px;
-  background-color: #d97736;
+  background-color: #408175;
   vertical-align: text-bottom;
   margin-left: 4px;
   border-radius: 2px;
   animation: cursorBlink 0.8s infinite;
+}
+
+/* Rich Organic Floating Animations for Koda Landing Cards */
+@keyframes floatOrganic1 {
+  0%, 100% {
+    transform: translateY(0px) rotate(0deg);
+  }
+  50% {
+    transform: translateY(-14px) rotate(-1.5deg);
+  }
+}
+
+@keyframes floatOrganic2 {
+  0%, 100% {
+    transform: translateY(0px) rotate(0deg);
+  }
+  50% {
+    transform: translateY(12px) rotate(1.2deg);
+  }
+}
+
+@keyframes floatOrganic3 {
+  0%, 100% {
+    transform: translateY(0px) translateX(0px) rotate(0deg);
+  }
+  50% {
+    transform: translateY(-16px) translateX(6px) rotate(-1deg);
+  }
+}
+
+@keyframes floatOrganic4 {
+  0%, 100% {
+    transform: translateY(0px) translateX(0px) rotate(0deg);
+  }
+  50% {
+    transform: translateY(14px) translateX(-5px) rotate(1.4deg);
+  }
+}
+
+@keyframes floatOrganic5 {
+  0%, 100% {
+    transform: translateY(0px) rotate(0deg);
+  }
+  50% {
+    transform: translateY(-10px) rotate(0.8deg);
+  }
+}
+
+@keyframes ambientPulse {
+  0%, 100% {
+    transform: scale(1);
+    opacity: 0.035;
+  }
+  50% {
+    transform: scale(1.22);
+    opacity: 0.085;
+  }
+}
+
+@keyframes shimmerGleam {
+  0% {
+    transform: translateX(-150%) rotate(25deg);
+  }
+  100% {
+    transform: translateX(250%) rotate(25deg);
+  }
+}
+
+.animate-float-1 {
+  animation: floatOrganic1 7s ease-in-out infinite;
+}
+
+.animate-float-2 {
+  animation: floatOrganic2 8.2s ease-in-out infinite 0.8s;
+}
+
+.animate-float-3 {
+  animation: floatOrganic3 9.4s ease-in-out infinite 1.5s;
+}
+
+.animate-float-4 {
+  animation: floatOrganic4 7.6s ease-in-out infinite 2.2s;
+}
+
+.animate-float-5 {
+  animation: floatOrganic5 8.8s ease-in-out infinite 3s;
+}
+
+.animate-ambient-pulse {
+  animation: ambientPulse 9s ease-in-out infinite;
+}
+
+.animate-shimmer {
+  animation: shimmerGleam 2.5s infinite;
 }

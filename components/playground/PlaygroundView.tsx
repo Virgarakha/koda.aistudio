@@ -1,14 +1,14 @@
 "use client";
 
 import React, { useState, useEffect, useRef } from "react";
-import { useRouter } from "next/navigation";
+import { useRouter, useSearchParams } from "next/navigation";
 import { Sidebar } from "@/components/playground/Sidebar";
 import { RunSettings } from "@/components/playground/RunSettings";
 import { Header } from "@/components/playground/Header";
 import { HeroShowcase } from "@/components/playground/HeroShowcase";
 import { PromptInput } from "@/components/playground/PromptInput";
-import { GoogleIcon } from "@/components/playground/GoogleIcon";
 import { useUserProfile } from "@/hooks/use-user-profile";
+import { useSidebarCollapse } from "@/hooks/use-sidebar-collapse";
 import { ChatMessage, KodaApp, FileAttachment } from "@/lib/apps/types";
 import {
   saveApp,
@@ -27,9 +27,10 @@ import {
   FileText,
   MessageSquare,
   Wrench,
+  PanelRightOpen,
 } from "lucide-react";
 import { MarkdownRenderer } from "@/components/playground/MarkdownRenderer";
-import { AiTool, AVAILABLE_AI_TOOLS } from "@/lib/ai/tools";
+import { AiTool, AVAILABLE_AI_TOOLS, getAiTool } from "@/lib/ai/tools";
 import { ModelSelectionSidebar } from "@/components/playground/ModelSelectionSidebar";
 import { SystemInstructionsSidebar } from "@/components/playground/SystemInstructionsSidebar";
 import { ToolThread } from "@/lib/apps/types";
@@ -37,6 +38,7 @@ import {
   ProductDiscoveryCard,
   ProductDiscoveryData,
 } from "@/components/playground/ProductDiscoveryCard";
+import { getCustomModels, getDecryptedModelKey } from "@/lib/apps/custom-models";
 
 interface PlaygroundViewProps {
   appId?: string;
@@ -44,14 +46,16 @@ interface PlaygroundViewProps {
 
 export function PlaygroundView({ appId }: PlaygroundViewProps) {
   const router = useRouter();
+  const searchParams = useSearchParams();
+  const toolParam = searchParams ? searchParams.get("tool") : null;
   const { userEmail, userTier, avatarUrl } = useUserProfile();
   const [userImgError, setUserImgError] = useState(false);
   const userInitial = userEmail ? userEmail.charAt(0).toUpperCase() : "K";
 
   const [currentAppId, setCurrentAppId] = useState<string | undefined>(appId);
   const [appTitle, setAppTitle] = useState<string>("");
-  const [sidebarCollapsed, setSidebarCollapsed] = useState(false);
-  const [settingsOpen, setSettingsOpen] = useState(true);
+  const { sidebarCollapsed, setSidebarCollapsed, toggleSidebar } = useSidebarCollapse();
+  const [settingsOpen, setSettingsOpen] = useState(false);
   const [isModelSelectionOpen, setIsModelSelectionOpen] = useState(false);
   const [isSystemInstructionsOpen, setIsSystemInstructionsOpen] = useState(false);
   const [systemInstructions, setSystemInstructions] = useState("");
@@ -89,29 +93,42 @@ export function PlaygroundView({ appId }: PlaygroundViewProps) {
     }
   };
 
-  // Load existing app if appId is provided
+  const initializedToolRef = useRef(false);
+
+  // 1. Tool initialization for new chat from query param (?tool=...)
+  useEffect(() => {
+    if (!appId && toolParam && !initializedToolRef.current) {
+      initializedToolRef.current = true;
+      const foundTool = getAiTool(toolParam);
+      if (foundTool) {
+        setSelectedTool(foundTool);
+      }
+    }
+  }, [appId, toolParam]);
+
+  // 2. Load existing app if appId is provided (e.g. /playground/[id])
   useEffect(() => {
     if (appId) {
-      const app = getAppById(appId);
-      if (app) {
-        setCurrentAppId(app.id);
-        setAppTitle(app.title);
-        setMainMessages(app.messages || []);
-        if (app.toolThreads) {
-          setToolThreads(app.toolThreads);
-        } else {
-          setToolThreads({});
+      const loadApp = () => {
+        const app = getAppById(appId);
+        if (app) {
+          setCurrentAppId(app.id);
+          setAppTitle(app.title);
+          setMainMessages(app.messages || []);
+          if (app.toolThreads) {
+            setToolThreads(app.toolThreads);
+          } else {
+            setToolThreads({});
+          }
+          if (app.model) setSelectedModel(app.model);
         }
-        if (app.model) setSelectedModel(app.model);
-      }
-    } else {
-      // New Chat
-      setCurrentAppId(undefined);
-      setAppTitle("");
-      setMainMessages([]);
-      setToolThreads({});
-      setActiveThreadId("main");
-      setSelectedTool(null);
+      };
+
+      loadApp();
+      window.addEventListener("koda_apps_updated", loadApp);
+      return () => {
+        window.removeEventListener("koda_apps_updated", loadApp);
+      };
     }
   }, [appId]);
 
@@ -127,6 +144,7 @@ export function PlaygroundView({ appId }: PlaygroundViewProps) {
   };
 
   const handleNewChat = () => {
+    initializedToolRef.current = false;
     setCurrentAppId(undefined);
     setAppTitle("");
     setMainMessages([]);
@@ -150,27 +168,10 @@ export function PlaygroundView({ appId }: PlaygroundViewProps) {
     setTimeout(() => setCopiedId(null), 2000);
   };
 
-  // Handle Tool Activation (Creates or switches to child thread)
+  // Handle Tool Activation (triggers tool context in standard main chat)
   const handleSelectTool = (tool: AiTool | null) => {
     setSelectedTool(tool);
-    if (!tool) {
-      setActiveThreadId("main");
-    } else {
-      setActiveThreadId(tool.id);
-      setToolThreads((prev) => {
-        if (prev[tool.id]) return prev;
-        return {
-          ...prev,
-          [tool.id]: {
-            toolId: tool.id,
-            title: tool.name,
-            messages: [],
-            createdAt: new Date().toISOString(),
-            updatedAt: new Date().toISOString(),
-          },
-        };
-      });
-    }
+    setActiveThreadId("main");
   };
 
   const handleSendMessage = async (
@@ -225,6 +226,20 @@ export function PlaygroundView({ appId }: PlaygroundViewProps) {
     setTimeout(() => scrollToBottom("smooth"), 50);
 
     try {
+      let customConfig = undefined;
+      const customModels = getCustomModels();
+      const activeCustomModel = customModels.find(
+        (cm) => cm.name === selectedModel || cm.modelName === selectedModel
+      );
+      if (activeCustomModel) {
+        const decryptedKey = await getDecryptedModelKey(activeCustomModel);
+        customConfig = {
+          modelName: activeCustomModel.modelName,
+          endpointUrl: activeCustomModel.endpointUrl,
+          apiKey: decryptedKey,
+        };
+      }
+
       const response = await fetch("/api/chat", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
@@ -250,6 +265,7 @@ export function PlaygroundView({ appId }: PlaygroundViewProps) {
           thinkingLevel,
           groundingSearch: groundingEnabled,
           systemInstructions: systemInstructions.trim() || undefined,
+          customConfig,
         }),
       });
 
@@ -533,15 +549,15 @@ Catatan Penting: Saya berlatar belakang "${data.userBackground || "Non-IT"}". To
     [...mainMessages].reverse().find((m) => m.role === "user")?.content || "";
 
   return (
-    <div className="flex h-screen w-screen overflow-hidden bg-[#131314] text-[#f1f3f4] font-sans">
+    <div className="flex h-screen w-screen overflow-hidden bg-[#0B0909] text-[#f1f3f4] font-sans">
       {/* 1. Left Sidebar */}
       <Sidebar
         collapsed={sidebarCollapsed}
-        onToggleCollapse={() => setSidebarCollapsed(!sidebarCollapsed)}
+        onToggleCollapse={toggleSidebar}
       />
 
       {/* 2. Main Middle Canvas */}
-      <div className="flex-1 flex flex-col min-w-0 h-screen overflow-hidden bg-[#131314]">
+      <div className="flex-1 flex flex-col min-w-0 h-screen overflow-hidden bg-[#0B0909] relative">
         {/* Top Header */}
         <Header
           onNewChat={handleNewChat}
@@ -550,80 +566,9 @@ Catatan Penting: Saya berlatar belakang "${data.userBackground || "Non-IT"}". To
           selectedModel={selectedModel}
           onOpenModelSelection={() => setIsModelSelectionOpen(true)}
           onCompilePRD={handleCompilePRD}
+          isSidebarCollapsed={sidebarCollapsed}
+          onToggleSidebar={toggleSidebar}
         />
-
-        {/* Thread Navigation Bar: Obrolan Utama vs Obrolan Anak (Connected Memory) */}
-        <div className="flex items-center justify-between px-4 sm:px-6 py-2 border-b border-[#282a2c] bg-[#161718] text-xs shrink-0 select-none">
-          <div className="flex items-center gap-1.5 overflow-x-auto no-scrollbar py-0.5 max-w-full">
-            {/* Obrolan Utama Tab */}
-            <button
-              type="button"
-              onClick={() => {
-                setActiveThreadId("main");
-                setSelectedTool(null);
-              }}
-              className={`flex items-center gap-2 px-3 py-1.5 rounded-xl font-medium transition cursor-pointer shrink-0 ${
-                activeThreadId === "main"
-                  ? "bg-[#282a2c] text-white border border-[#3c4043] shadow-sm"
-                  : "text-[#9aa0a6] hover:text-[#f1f3f4] hover:bg-[#202123]"
-              }`}
-            >
-              <MessageSquare className="w-3.5 h-3.5 text-[#8ab4f8]" />
-              <span>Obrolan Utama</span>
-              {mainMessages.length > 0 && (
-                <span className="text-[10px] px-1.5 py-0.2 rounded-full bg-[#3c4043] text-[#c4c7c5]">
-                  {mainMessages.length}
-                </span>
-              )}
-            </button>
-
-            {/* Child Threads Tabs */}
-            {Object.entries(toolThreads).map(([tId, thread]) => {
-              const toolMeta = AVAILABLE_AI_TOOLS.find((t) => t.id === tId);
-              const isActive = activeThreadId === tId;
-              return (
-                <div key={tId} className="flex items-center shrink-0">
-                  <span className="text-[#5f6368] mx-0.5 text-xs">›</span>
-                  <button
-                    type="button"
-                    onClick={() => {
-                      setActiveThreadId(tId);
-                      if (toolMeta) setSelectedTool(toolMeta);
-                    }}
-                    className={`flex items-center gap-2 px-3 py-1.5 rounded-xl font-medium transition cursor-pointer ${
-                      isActive
-                        ? "bg-[#2d3238] text-[#d97736] border border-[#d97736]/50 shadow-sm"
-                        : "text-[#9aa0a6] hover:text-[#f1f3f4] hover:bg-[#202123]"
-                    }`}
-                  >
-                    <Wrench className="w-3.5 h-3.5 text-[#d97736]" />
-                    <span>{thread.title}</span>
-                    <span className="text-[10px] px-1.5 py-0.2 rounded-full bg-[#1c1d20] border border-[#d97736]/30 text-[#d97736]">
-                      Anak
-                    </span>
-                    {thread.messages.length > 0 && (
-                      <span className="text-[10px] px-1.5 py-0.2 rounded-full bg-[#3c4043] text-[#c4c7c5]">
-                        {thread.messages.length}
-                      </span>
-                    )}
-                  </button>
-                </div>
-              );
-            })}
-          </div>
-
-          {/* Memory Connection Status Badge */}
-          {activeThreadId !== "main" ? (
-            <div className="hidden sm:flex items-center gap-1.5 text-[11px] text-[#9aa0a6] bg-[#1e1f20] px-2.5 py-1 rounded-full border border-[#282a2c] shrink-0 ml-2">
-              <span className="w-1.5 h-1.5 rounded-full bg-emerald-400 animate-pulse" />
-              <span className="text-[#c4c7c5]">Memori Terhubung dengan Obrolan Utama</span>
-            </div>
-          ) : (
-            <div className="hidden sm:flex items-center gap-1.5 text-[11px] text-[#9aa0a6] shrink-0 ml-2">
-              <span>Konteks Obrolan Utama</span>
-            </div>
-          )}
-        </div>
 
         {/* Center Canvas Body */}
         <div
@@ -631,12 +576,23 @@ Catatan Penting: Saya berlatar belakang "${data.userBackground || "Non-IT"}". To
           className="flex-1 overflow-y-auto flex flex-col justify-between relative"
         >
           {currentDisplayMessages.length === 0 ? (
-            /* Empty State: Product Discovery Card for PRD Tool Child Thread or Hero Showcase */
-            activeThreadId === "prd_builder" ? (
+            selectedTool?.id === "prd_builder" ? (
               <div className="my-auto py-6 px-4">
+                <div className="max-w-2xl mx-auto mb-3 flex items-center justify-between text-xs text-[#9aa0a6] px-1">
+                  <span className="flex items-center gap-1.5 font-medium text-[#408175]">
+                    <Sparkles className="w-3.5 h-3.5 text-[#408175]" />
+                    Mode Tool: {selectedTool.name}
+                  </span>
+                  <button
+                    type="button"
+                    onClick={() => setSelectedTool(null)}
+                    className="hover:text-white hover:underline transition cursor-pointer"
+                  >
+                    Beralih ke Chat Biasa (Tanpa Tool)
+                  </button>
+                </div>
                 <ProductDiscoveryCard
                   onSubmit={handleProductDiscoverySubmit}
-                  initialIdea={lastMainUserMsg}
                   isLoading={isLoading}
                 />
               </div>
@@ -691,9 +647,9 @@ Catatan Penting: Saya berlatar belakang "${data.userBackground || "Non-IT"}". To
                             ) : (
                               <div
                                 key={idx}
-                                className="flex items-center gap-2.5 px-3 py-2 rounded-2xl bg-[#282a2c] border border-[#3c4043] text-xs text-white shadow-sm"
+                                className="flex items-center gap-2.5 px-3 py-2 rounded-2xl bg-[#141111] border border-[#241f1f] text-xs text-white shadow-sm"
                               >
-                                <div className="p-1.5 rounded-lg bg-[#18191a] text-[#d97736]">
+                                <div className="p-1.5 rounded-lg bg-[#1a1616] text-[#408175]">
                                   <FileText className="w-4 h-4" />
                                 </div>
                                 <div className="flex flex-col min-w-0 pr-1">
@@ -709,7 +665,7 @@ Catatan Penting: Saya berlatar belakang "${data.userBackground || "Non-IT"}". To
                           )}
                         </div>
                       )}
-                      <div className="max-w-[75%] sm:max-w-[70%] bg-[#282a2c] text-[#f1f3f4] px-6 py-3.5 rounded-3xl rounded-tr-md text-[15px] sm:text-base leading-relaxed whitespace-pre-wrap selection:bg-[#3c4043] border border-[#37393b]/50 shadow-sm">
+                      <div className="max-w-[75%] sm:max-w-[70%] bg-[#1a1616] text-[#f1f3f4] px-6 py-3.5 rounded-3xl rounded-tr-md text-[15px] sm:text-base leading-relaxed whitespace-pre-wrap selection:bg-[#408175]/30 border border-[#241f1f] shadow-sm">
                         {msg.content}
                       </div>
                     </div>
@@ -732,7 +688,7 @@ Catatan Penting: Saya berlatar belakang "${data.userBackground || "Non-IT"}". To
                             )}
                           </button>
                           {expandedThoughts[msg.id] && (
-                            <p className="mt-1 text-xs leading-relaxed text-[#9aa0a6] font-mono bg-[#1a1b1d] border border-[#282a2c] p-3 rounded-xl whitespace-pre-wrap">
+                            <p className="mt-1 text-xs leading-relaxed text-[#9aa0a6] font-mono bg-[#141111] border border-[#241f1f] p-3 rounded-xl whitespace-pre-wrap">
                               {msg.thought}
                             </p>
                           )}
@@ -753,7 +709,7 @@ Catatan Penting: Saya berlatar belakang "${data.userBackground || "Non-IT"}". To
                       <div className="flex items-center gap-1 pt-2 text-[#9aa0a6]">
                         <button
                           type="button"
-                          className="p-1.5 hover:text-white hover:bg-[#282a2c] rounded-md transition"
+                          className="p-1.5 hover:text-white hover:bg-[#1a1616] rounded-md transition"
                           title="Bagus (Thumbs up)"
                         >
                           <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -762,7 +718,7 @@ Catatan Penting: Saya berlatar belakang "${data.userBackground || "Non-IT"}". To
                         </button>
                         <button
                           type="button"
-                          className="p-1.5 hover:text-white hover:bg-[#282a2c] rounded-md transition"
+                          className="p-1.5 hover:text-white hover:bg-[#1a1616] rounded-md transition"
                           title="Kurang bagus (Thumbs down)"
                         >
                           <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -772,7 +728,7 @@ Catatan Penting: Saya berlatar belakang "${data.userBackground || "Non-IT"}". To
                         <button
                           type="button"
                           onClick={() => copyToClipboard(msg.id, msg.content)}
-                          className="p-1.5 hover:text-white hover:bg-[#282a2c] rounded-md transition"
+                          className="p-1.5 hover:text-white hover:bg-[#1a1616] rounded-md transition"
                           title="Salin respon"
                         >
                           {copiedId === msg.id ? (
@@ -783,7 +739,7 @@ Catatan Penting: Saya berlatar belakang "${data.userBackground || "Non-IT"}". To
                         </button>
                         <button
                           type="button"
-                          className="p-1.5 hover:text-white hover:bg-[#282a2c] rounded-md transition"
+                          className="p-1.5 hover:text-white hover:bg-[#1a1616] rounded-md transition"
                           title="Opsi lainnya"
                         >
                           <svg className="w-4 h-4" fill="currentColor" viewBox="0 0 24 24">
@@ -818,7 +774,7 @@ Catatan Penting: Saya berlatar belakang "${data.userBackground || "Non-IT"}". To
           )}
 
           {/* Floating Bottom Prompt Bar with Dynamic Tools */}
-          <div className="sticky bottom-0 bg-gradient-to-t from-[#131314] via-[#131314] to-transparent pt-4">
+          <div className="sticky bottom-0 bg-gradient-to-t from-[#0B0909] via-[#0B0909] to-transparent pt-4">
             <PromptInput
               value={promptText}
               onChange={setPromptText}
@@ -829,9 +785,27 @@ Catatan Penting: Saya berlatar belakang "${data.userBackground || "Non-IT"}". To
               onOpenToolsModal={() => setSettingsOpen(true)}
               selectedTool={selectedTool}
               onSelectTool={handleSelectTool}
+              showToolsMenu={true}
+              placeholder={
+                selectedTool
+                  ? selectedTool.placeholder
+                  : "Tanyakan apa saja ke Koda AI... (Ketik pesan atau lampirkan berkas)"
+              }
             />
           </div>
         </div>
+
+        {/* Floating edge handle to expand Run Settings when minimized */}
+        {!settingsOpen && (
+          <button
+            type="button"
+            onClick={() => setSettingsOpen(true)}
+            className="hidden sm:flex absolute right-0 top-1/2 -translate-y-1/2 z-20 items-center justify-center w-5 h-12 bg-[#141111] hover:bg-[#1a1616] text-[#80868b] hover:text-[#f1f3f4] border-y border-l border-[#241f1f] rounded-l-md shadow-md transition-all cursor-pointer group"
+            title="Buka Run Settings"
+          >
+            <PanelRightOpen className="w-3.5 h-3.5 text-[#9aa0a6] group-hover:text-[#408175] transition-colors" />
+          </button>
+        )}
       </div>
 
       {/* 3. Right Settings Sidebar */}

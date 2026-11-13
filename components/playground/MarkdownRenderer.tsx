@@ -43,14 +43,14 @@ export function MarkdownRenderer({
                 loading="lazy"
               />
               {alt && (
-                <div className="p-2.5 bg-[#1a1b1d] border-t border-[#282a2c] text-xs text-[#9aa0a6] text-center">
+                <div className="p-2.5 bg-[#141111] border-t border-[#241f1f] text-xs text-[#9aa0a6] text-center">
                   {alt}
                 </div>
               )}
             </div>
           ),
           h1: ({ children }) => (
-            <h1 className="text-2xl sm:text-[26px] font-bold text-white mt-7 mb-3.5 tracking-tight border-b border-[#282a2c] pb-2.5">
+            <h1 className="text-2xl sm:text-[26px] font-bold text-white mt-7 mb-3.5 tracking-tight border-b border-[#241f1f] pb-2.5">
               {children}
             </h1>
           ),
@@ -100,20 +100,20 @@ export function MarkdownRenderer({
             </em>
           ),
           blockquote: ({ children }) => (
-            <blockquote className="border-l-[3px] border-[#d97736] bg-[#1c1d20] pl-4 pr-3.5 py-3 my-4 rounded-r-xl text-[#dcdcdc] text-sm not-italic leading-relaxed shadow-sm">
+            <blockquote className="border-l-[3px] border-[#408175] bg-[#141111] pl-4 pr-3.5 py-3 my-4 rounded-r-xl text-[#dcdcdc] text-sm not-italic leading-relaxed shadow-sm">
               {children}
             </blockquote>
           ),
-          hr: () => <hr className="border-[#282a2c] my-5" />,
+          hr: () => <hr className="border-[#241f1f] my-5" />,
           table: ({ children }) => (
-            <div className="overflow-x-auto my-4 rounded-xl border border-[#2e3032] bg-[#161719] shadow-sm">
+            <div className="overflow-x-auto my-4 rounded-xl border border-[#241f1f] bg-[#141111] shadow-sm">
               <table className="w-full text-xs sm:text-[13px] text-left border-collapse">
                 {children}
               </table>
             </div>
           ),
           thead: ({ children }) => (
-            <thead className="bg-[#1f2023] text-[#f1f3f4] font-semibold border-b border-[#2e3032]">
+            <thead className="bg-[#1a1616] text-[#f1f3f4] font-semibold border-b border-[#241f1f]">
               {children}
             </thead>
           ),
@@ -123,7 +123,7 @@ export function MarkdownRenderer({
             </th>
           ),
           td: ({ children }) => (
-            <td className="px-4 py-2.5 border-b border-[#282a2c]/60 text-[#c4c7c5] leading-relaxed">
+            <td className="px-4 py-2.5 border-b border-[#241f1f] text-[#c4c7c5] leading-relaxed">
               {children}
             </td>
           ),
@@ -238,17 +238,17 @@ function CodeBlock({ language, code }: { language?: string; code: string }) {
   };
 
   return (
-    <div className="my-3 rounded-xl overflow-hidden border border-[#2e3032] bg-[#141517] shadow-lg">
-      <div className="flex items-center justify-between px-3.5 py-2 bg-[#1b1c1e] border-b border-[#282a2c] text-xs text-[#9aa0a6]">
+    <div className="my-3 rounded-xl overflow-hidden border border-[#241f1f] bg-[#0B0909] shadow-lg">
+      <div className="flex items-center justify-between px-3.5 py-2 bg-[#141111] border-b border-[#241f1f] text-xs text-[#9aa0a6]">
         <div className="flex items-center gap-2">
-          <Code2 className="w-3.5 h-3.5 text-[#d97736]" />
+          <Code2 className="w-3.5 h-3.5 text-[#408175]" />
           <span className="font-mono text-[11px] uppercase tracking-wider text-[#c4c7c5]">
             {language || "code"}
           </span>
         </div>
         <button
           onClick={handleCopy}
-          className="flex items-center gap-1.5 px-2 py-1 rounded text-[11px] hover:text-white hover:bg-[#282a2c] transition"
+          className="flex items-center gap-1.5 px-2 py-1 rounded text-[11px] hover:text-white hover:bg-[#1a1616] transition"
         >
           {copied ? (
             <>
@@ -263,7 +263,7 @@ function CodeBlock({ language, code }: { language?: string; code: string }) {
           )}
         </button>
       </div>
-      <pre className="p-4 text-xs font-mono text-[#f1f3f4] overflow-x-auto leading-relaxed selection:bg-[#3c4043]">
+      <pre className="p-4 text-xs font-mono text-[#f1f3f4] overflow-x-auto leading-relaxed selection:bg-[#408175]/30">
         <code>{code}</code>
       </pre>
     </div>

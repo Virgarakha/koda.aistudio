@@ -230,11 +230,11 @@ export function SystemFlowDiagram({ rawCode, language }: { rawCode: string; lang
     ctx.scale(scale, scale);
 
     // 1. Dark Canvas Background
-    ctx.fillStyle = "#121314";
+    ctx.fillStyle = "#0B0909";
     ctx.fillRect(0, 0, width, totalHeight);
 
     // 2. Subtle Grid Background Dots
-    ctx.fillStyle = "#222426";
+    ctx.fillStyle = "#1a1616";
     for (let x = 20; x < width; x += 24) {
       for (let y = 20; y < totalHeight; y += 24) {
         ctx.fillRect(x, y, 1.5, 1.5);
@@ -259,23 +259,23 @@ export function SystemFlowDiagram({ rawCode, language }: { rawCode: string; lang
       const isAction = node.category === "action";
 
       // Card Background
-      ctx.fillStyle = "#1c1d1f";
+      ctx.fillStyle = "#141111";
       ctx.beginPath();
       ctx.roundRect(paddingX, currentY, cardWidth, cardHeight, 14);
       ctx.fill();
 
       // Card Border Accent
-      ctx.strokeStyle = isCritical ? "#d97736" : isActor ? "#d97736" : "#2e3032";
+      ctx.strokeStyle = isCritical ? "#B5B9F0" : isActor ? "#408175" : "#241f1f";
       ctx.lineWidth = 1.2;
       ctx.stroke();
 
       // Step Number Badge (Pill)
-      ctx.fillStyle = isActor ? "#2a1d17" : isCritical ? "#2d1c10" : "#242628";
+      ctx.fillStyle = isActor ? "#2E4540" : isCritical ? "#252136" : "#1a1616";
       ctx.beginPath();
       ctx.roundRect(paddingX + 16, currentY + 16, 36, 44, 8);
       ctx.fill();
 
-      ctx.fillStyle = isActor || isCritical ? "#d97736" : "#9aa0a6";
+      ctx.fillStyle = isActor ? "#408175" : isCritical ? "#B5B9F0" : "#9aa0a6";
       ctx.font = "bold 15px sans-serif";
       ctx.textAlign = "center";
       ctx.textBaseline = "middle";
@@ -296,7 +296,7 @@ export function SystemFlowDiagram({ rawCode, language }: { rawCode: string; lang
           : "PROSES SERVER & DATABASE"
       );
       ctx.font = "bold 10px sans-serif";
-      ctx.fillStyle = isCritical ? "#fbbf24" : isActor ? "#d97736" : isAction ? "#38bdf8" : "#34d399";
+      ctx.fillStyle = isCritical ? "#B5B9F0" : isActor ? "#408175" : isAction ? "#38bdf8" : "#34d399";
       ctx.fillText(badgeText, paddingX + 66, currentY + 28);
 
       // Main Title
@@ -319,7 +319,7 @@ export function SystemFlowDiagram({ rawCode, language }: { rawCode: string; lang
         const arrowEndY = currentY + arrowHeight;
         const arrowX = paddingX + cardWidth / 2;
 
-        ctx.strokeStyle = "#3c4043";
+        ctx.strokeStyle = "#241f1f";
         ctx.lineWidth = 1.5;
         ctx.beginPath();
         ctx.moveTo(arrowX, arrowStartY + 4);
@@ -327,7 +327,7 @@ export function SystemFlowDiagram({ rawCode, language }: { rawCode: string; lang
         ctx.stroke();
 
         // Arrow head
-        ctx.fillStyle = "#d97736";
+        ctx.fillStyle = "#408175";
         ctx.beginPath();
         ctx.moveTo(arrowX, arrowEndY - 3);
         ctx.lineTo(arrowX - 5, arrowEndY - 11);
@@ -338,16 +338,16 @@ export function SystemFlowDiagram({ rawCode, language }: { rawCode: string; lang
         // Edge label if present
         const edge = flowData.edges.find((e) => e.from === node.id || e.from === String(idx + 1));
         if (edge?.label) {
-          ctx.fillStyle = "#25272a";
+          ctx.fillStyle = "#141111";
           ctx.beginPath();
           ctx.roundRect(arrowX + 12, arrowStartY + 10, 110, 22, 6);
           ctx.fill();
 
-          ctx.strokeStyle = "#3c4043";
+          ctx.strokeStyle = "#241f1f";
           ctx.lineWidth = 1;
           ctx.stroke();
 
-          ctx.fillStyle = "#d97736";
+          ctx.fillStyle = "#408175";
           ctx.font = "bold 10px sans-serif";
           ctx.fillText(edge.label, arrowX + 18, arrowStartY + 25);
         }
@@ -369,22 +369,22 @@ export function SystemFlowDiagram({ rawCode, language }: { rawCode: string; lang
 
   if (viewMode === "raw") {
     return (
-      <div className="my-4 rounded-2xl overflow-hidden border border-[#2e3032] bg-[#141517] shadow-xl">
-        <div className="flex items-center justify-between px-4 py-2.5 bg-[#1b1c1e] border-b border-[#282a2c] text-xs text-[#9aa0a6]">
+      <div className="my-4 rounded-2xl overflow-hidden border border-[#241f1f] bg-[#0B0909] shadow-xl">
+        <div className="flex items-center justify-between px-4 py-2.5 bg-[#141111] border-b border-[#241f1f] text-xs text-[#9aa0a6]">
           <span className="font-mono text-xs uppercase tracking-wider text-[#c4c7c5]">
             RAW FLOW DATA (JSON)
           </span>
           <div className="flex items-center gap-2">
             <button
               onClick={() => setViewMode("image")}
-              className="flex items-center gap-1.5 px-2.5 py-1 rounded-md text-xs font-medium text-[#d97736] hover:bg-[#282a2c] transition"
+              className="flex items-center gap-1.5 px-2.5 py-1 rounded-md text-xs font-medium text-[#408175] hover:bg-[#1a1616] transition"
             >
               <ImageIcon className="w-3.5 h-3.5" />
               <span>Lihat Gambar Flowchart</span>
             </button>
             <button
               onClick={handleCopy}
-              className="flex items-center gap-1.5 px-2.5 py-1 rounded-md text-xs text-[#c4c7c5] hover:text-white hover:bg-[#282a2c] transition"
+              className="flex items-center gap-1.5 px-2.5 py-1 rounded-md text-xs text-[#c4c7c5] hover:text-white hover:bg-[#1a1616] transition"
             >
               {copied ? <Check className="w-3.5 h-3.5 text-emerald-400" /> : <Copy className="w-3.5 h-3.5" />}
               <span>{copied ? "Tersalin" : "Salin"}</span>
@@ -401,7 +401,7 @@ export function SystemFlowDiagram({ rawCode, language }: { rawCode: string; lang
   return (
     <>
       {/* Main Flowchart Image Card Container */}
-      <div className="my-5 rounded-2xl    overflow-hidden animate-in fade-in duration-200">
+      <div className="my-5 rounded-2xl overflow-hidden animate-in fade-in duration-200 border border-[#241f1f]">
         
         {/* Top Header Controls Bar */}
         
@@ -409,7 +409,7 @@ export function SystemFlowDiagram({ rawCode, language }: { rawCode: string; lang
         {/* Clean Static Flowchart Diagram Display with Gradual Fade & Show More */}
         <div className="relative">
           <div
-            className={`p-5 sm:p-7 bg-[#121314] overflow-hidden transition-all duration-300 ${
+            className={`p-5 sm:p-7 bg-[#0B0909] overflow-hidden transition-all duration-300 ${
               isExpanded || flowData.nodes.length <= 2 ? "max-h-none" : "max-h-[380px]"
             }`}
           >
@@ -503,15 +503,15 @@ export function SystemFlowDiagram({ rawCode, language }: { rawCode: string; lang
                     {/* Flow Connector Arrow */}
                     {!isLast && (
                       <div className="flex flex-col items-center my-1.5 py-1">
-                        <div className="w-[1.5px] h-3 bg-gradient-to-b from-[#3c4043] to-[#d97736]" />
+                        <div className="w-[1.5px] h-3 bg-gradient-to-b from-[#241f1f] to-[#408175]" />
                         
                         {edge?.label && (
-                          <div className="my-0.5 px-2.5 py-0.5 rounded-full bg-[#25272a] border border-[#3c4043] text-[10.5px] font-medium text-[#f39c6b] shadow-sm">
+                          <div className="my-0.5 px-2.5 py-0.5 rounded-full bg-[#141111] border border-[#241f1f] text-[10.5px] font-medium text-[#408175] shadow-sm">
                             {edge.label}
                           </div>
                         )}
 
-                        <div className="flex items-center justify-center w-5 h-5 rounded-full bg-[#1e1f20] border border-[#3c4043] text-[#d97736] shadow-sm">
+                        <div className="flex items-center justify-center w-5 h-5 rounded-full bg-[#141111] border border-[#241f1f] text-[#408175] shadow-sm">
                           <ArrowDown className="w-3 h-3" />
                         </div>
                       </div>
@@ -524,21 +524,21 @@ export function SystemFlowDiagram({ rawCode, language }: { rawCode: string; lang
 
           {/* Opacity Gradient Overlay & Show More Button when collapsed */}
           {!isExpanded && flowData.nodes.length > 2 && (
-            <div className="absolute inset-x-0 bottom-0 h-36 bg-gradient-to-t from-[#121314] via-[#121314]/85 to-transparent flex items-end justify-center pb-3 pointer-events-none">
+            <div className="absolute inset-x-0 bottom-0 h-36 bg-gradient-to-t from-[#0B0909] via-[#0B0909]/85 to-transparent flex items-end justify-center pb-3 pointer-events-none">
               <button
                 type="button"
                 onClick={() => setIsExpanded(true)}
-                className="pointer-events-auto flex items-center gap-2 px-4 py-2 rounded-full bg-[#212224] hover:bg-[#282a2c] text-[#f1f3f4] hover:text-white border border-[#3c4043] hover:border-[#5a5d61] shadow-xl text-xs font-medium transition group"
+                className="pointer-events-auto flex items-center gap-2 px-4 py-2 rounded-full bg-[#141111] hover:bg-[#1a1616] text-[#f1f3f4] hover:text-white border border-[#241f1f] hover:border-[#408175]/60 shadow-xl text-xs font-medium transition group"
               >
                 <span>Lihat Seluruh Alur ({flowData.nodes.length} Langkah)</span>
-                <ChevronDown className="w-3.5 h-3.5 text-[#d97736] group-hover:translate-y-0.5 transition-transform" />
+                <ChevronDown className="w-3.5 h-3.5 text-[#408175] group-hover:translate-y-0.5 transition-transform" />
               </button>
             </div>
           )}
         </div>
 
         {/* Footer Toolbar Bar */}
-        <div className="flex items-center justify-between px-4 py-3 bg-[#121314] border-t border-[#282a2c]/40">
+        <div className="flex items-center justify-between px-4 py-3 bg-[#0B0909] border-t border-[#1f1a1a]">
           <div>
             {isExpanded && flowData.nodes.length > 2 && (
               <button
@@ -546,7 +546,7 @@ export function SystemFlowDiagram({ rawCode, language }: { rawCode: string; lang
                 onClick={() => setIsExpanded(false)}
                 className="flex items-center gap-1.5 text-xs text-[#9aa0a6] hover:text-[#f1f3f4] font-medium transition"
               >
-                <ChevronUp className="w-3.5 h-3.5 text-[#d97736]" />
+                <ChevronUp className="w-3.5 h-3.5 text-[#408175]" />
                 <span>Tutup Alur</span>
               </button>
             )}
@@ -556,7 +556,7 @@ export function SystemFlowDiagram({ rawCode, language }: { rawCode: string; lang
             {/* Download as PNG button */}
             <button
               onClick={handleDownloadPng}
-              className="flex items-center gap-1.5 px-2.5 py-1.5 text-xs text-[#9aa0a6] hover:text-white hover:bg-[#282a2c] rounded-lg transition font-medium"
+              className="flex items-center gap-1.5 px-2.5 py-1.5 text-xs text-[#9aa0a6] hover:text-white hover:bg-[#1a1616] rounded-lg transition font-medium"
               title="Unduh diagram ini sebagai file gambar PNG beresolusi tinggi"
             >
               {downloaded ? <Check className="w-3.5 h-3.5 text-emerald-400" /> : <Download className="w-3.5 h-3.5" />}
@@ -566,7 +566,7 @@ export function SystemFlowDiagram({ rawCode, language }: { rawCode: string; lang
             {/* Lightbox Zoom button */}
             <button
               onClick={() => setIsLightboxOpen(true)}
-              className="p-1.5 text-[#9aa0a6] hover:text-white hover:bg-[#282a2c] rounded-lg transition"
+              className="p-1.5 text-[#9aa0a6] hover:text-white hover:bg-[#1a1616] rounded-lg transition"
               title="Perbesar gambar ukuran penuh"
             >
               <Maximize2 className="w-3.5 h-3.5" />
@@ -575,7 +575,7 @@ export function SystemFlowDiagram({ rawCode, language }: { rawCode: string; lang
             {/* Raw JSON toggle */}
             <button
               onClick={() => setViewMode("raw")}
-              className="p-1.5 text-[#9aa0a6] hover:text-white hover:bg-[#282a2c] rounded-lg transition"
+              className="p-1.5 text-[#9aa0a6] hover:text-white hover:bg-[#1a1616] rounded-lg transition"
               title="Lihat format raw data JSON"
             >
               <Code className="w-3.5 h-3.5" />
@@ -584,7 +584,7 @@ export function SystemFlowDiagram({ rawCode, language }: { rawCode: string; lang
             {/* Copy button */}
             <button
               onClick={handleCopy}
-              className="p-1.5 text-[#9aa0a6] hover:text-white hover:bg-[#282a2c] rounded-lg transition"
+              className="p-1.5 text-[#9aa0a6] hover:text-white hover:bg-[#1a1616] rounded-lg transition"
               title="Salin data flow"
             >
               {copied ? <Check className="w-3.5 h-3.5 text-emerald-400" /> : <Copy className="w-3.5 h-3.5" />}
@@ -599,11 +599,11 @@ export function SystemFlowDiagram({ rawCode, language }: { rawCode: string; lang
       {/* Lightbox Modal (Zoom Fullscreen) */}
       {isLightboxOpen && (
         <div className="fixed inset-0 z-50 bg-black/80 backdrop-blur-md flex items-center justify-center p-4 animate-in fade-in duration-200">
-          <div className="relative w-full max-w-3xl max-h-[90vh] bg-[#121314] border border-[#2e3032] rounded-2xl shadow-2xl flex flex-col overflow-hidden">
+          <div className="relative w-full max-w-3xl max-h-[90vh] bg-[#0B0909] border border-[#241f1f] rounded-2xl shadow-2xl flex flex-col overflow-hidden">
             {/* Modal Header */}
-            <div className="flex items-center justify-between px-5 py-3.5 bg-[#18191b] border-b border-[#282a2c]">
+            <div className="flex items-center justify-between px-5 py-3.5 bg-[#141111] border-b border-[#241f1f]">
               <div className="flex items-center gap-2">
-                <ImageIcon className="w-4 h-4 text-[#d97736]" />
+                <ImageIcon className="w-4 h-4 text-[#408175]" />
                 <h3 className="font-semibold text-sm text-white">
                   {flowData.title || "Diagram Alur Sistem"}
                 </h3>
@@ -611,14 +611,14 @@ export function SystemFlowDiagram({ rawCode, language }: { rawCode: string; lang
               <div className="flex items-center gap-2">
                 <button
                   onClick={handleDownloadPng}
-                  className="flex items-center gap-1 px-3 py-1.5 bg-[#d97736] hover:bg-[#e58849] text-white text-xs rounded-lg font-medium transition"
+                  className="flex items-center gap-1 px-3 py-1.5 bg-[#408175] hover:bg-[#4ea092] text-white text-xs rounded-lg font-medium transition"
                 >
                   <Download className="w-3.5 h-3.5" />
                   <span>Unduh PNG</span>
                 </button>
                 <button
                   onClick={() => setIsLightboxOpen(false)}
-                  className="p-1.5 text-[#9aa0a6] hover:text-white hover:bg-[#282a2c] rounded-lg transition"
+                  className="p-1.5 text-[#9aa0a6] hover:text-white hover:bg-[#1a1616] rounded-lg transition"
                 >
                   <X className="w-4 h-4" />
                 </button>
@@ -628,8 +628,8 @@ export function SystemFlowDiagram({ rawCode, language }: { rawCode: string; lang
             {/* Modal Body */}
             <div className="p-6 overflow-y-auto space-y-3">
               {flowData.nodes.map((node, idx) => (
-                <div key={idx} className="flex items-start gap-3 p-3.5 bg-[#1c1d1f] border border-[#2e3032] rounded-xl">
-                  <span className="w-7 h-7 rounded-lg bg-[#282a2c] text-[#d97736] font-bold text-xs flex items-center justify-center shrink-0">
+                <div key={idx} className="flex items-start gap-3 p-3.5 bg-[#141111] border border-[#241f1f] rounded-xl">
+                  <span className="w-7 h-7 rounded-lg bg-[#1a1616] text-[#408175] font-bold text-xs flex items-center justify-center shrink-0 border border-[#241f1f]">
                     {idx + 1}
                   </span>
                   <div>

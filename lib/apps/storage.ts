@@ -22,12 +22,17 @@ export function getSavedApps(userEmail?: string): KodaApp[] {
     const raw = localStorage.getItem(STORAGE_KEY);
     if (!raw) return [];
     const apps: KodaApp[] = JSON.parse(raw);
+    const sortFn = (a: KodaApp, b: KodaApp) => {
+      if (a.pinned && !b.pinned) return -1;
+      if (!a.pinned && b.pinned) return 1;
+      return new Date(b.updatedAt).getTime() - new Date(a.updatedAt).getTime();
+    };
     if (userEmail) {
       return apps.filter(
         (a) => !a.userEmail || a.userEmail === userEmail
-      ).sort((a, b) => new Date(b.updatedAt).getTime() - new Date(a.updatedAt).getTime());
+      ).sort(sortFn);
     }
-    return apps.sort((a, b) => new Date(b.updatedAt).getTime() - new Date(a.updatedAt).getTime());
+    return apps.sort(sortFn);
   } catch (e) {
     console.error("Failed to parse saved apps:", e);
     return [];
@@ -68,6 +73,9 @@ export async function saveApp(app: KodaApp): Promise<KodaApp> {
     }
 
     localStorage.setItem(STORAGE_KEY, JSON.stringify(newApps));
+    if (typeof window !== "undefined") {
+      window.dispatchEvent(new Event("koda_apps_updated"));
+    }
 
     // Async sync with Supabase if table exists
     if (isSupabaseConfigured() && isAppsTableAvailable) {
@@ -110,6 +118,9 @@ export async function deleteApp(id: string): Promise<boolean> {
     const apps = getSavedApps();
     const filtered = apps.filter((a) => a.id !== id);
     localStorage.setItem(STORAGE_KEY, JSON.stringify(filtered));
+    if (typeof window !== "undefined") {
+      window.dispatchEvent(new Event("koda_apps_updated"));
+    }
 
     if (isSupabaseConfigured()) {
       try {

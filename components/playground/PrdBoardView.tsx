@@ -142,7 +142,7 @@ export function PrdBoardView({ appId }: PrdBoardViewProps) {
   };
 
   return (
-    <div className="min-h-screen bg-[#111213] text-[#f1f3f4] flex flex-col font-sans select-none overflow-x-hidden relative">
+    <div className="min-h-screen bg-[#0B0909] text-[#f1f3f4] flex flex-col font-sans select-none overflow-x-hidden relative">
       {/* ✦ Virtual AI Agent Cursor (Stitch Style) */}
       {isCursorActive && (
         <div
@@ -152,40 +152,40 @@ export function PrdBoardView({ appId }: PrdBoardViewProps) {
           }}
         >
           {/* Glowing cursor arrow */}
-          <svg className="w-5 h-5 text-[#d97736] drop-shadow-[0_0_8px_rgba(217,119,54,0.8)]" viewBox="0 0 24 24" fill="currentColor">
+          <svg className="w-5 h-5 text-[#408175] drop-shadow-[0_0_8px_rgba(64,129,117,0.8)]" viewBox="0 0 24 24" fill="currentColor">
             <path d="M3 3l7 18 3-7 7-3L3 3z" />
           </svg>
           {/* Floating Agent Badge */}
-          <div className="bg-[#1e1f21]/95 text-white border border-[#d97736]/60 px-2.5 py-1 rounded-full text-[11px] font-medium shadow-2xl backdrop-blur-md flex items-center gap-1.5 whitespace-nowrap animate-in fade-in">
-            <span className="w-1.5 h-1.5 rounded-full bg-[#d97736] animate-ping" />
+          <div className="bg-[#141111]/95 text-white border border-[#408175]/60 px-2.5 py-1 rounded-full text-[11px] font-medium shadow-2xl backdrop-blur-md flex items-center gap-1.5 whitespace-nowrap animate-in fade-in">
+            <span className="w-1.5 h-1.5 rounded-full bg-[#408175] animate-ping" />
             <span>{cursorMessage}</span>
           </div>
         </div>
       )}
 
       {/* Top Header Bar */}
-      <header className="h-14 border-b border-[#282a2c] bg-[#141517] px-4 sm:px-6 flex items-center justify-between shrink-0 sticky top-0 z-40">
+      <header className="h-14 border-b border-[#1f1a1a] bg-[#141111] px-4 sm:px-6 flex items-center justify-between shrink-0 sticky top-0 z-40">
         <div className="flex items-center gap-3">
           <button
             type="button"
             onClick={() => router.back()}
-            className="p-1.5 rounded-lg text-[#9aa0a6] hover:text-white hover:bg-[#25272a] transition flex items-center gap-1.5 text-xs font-medium"
+            className="p-1.5 rounded-lg text-[#9aa0a6] hover:text-white hover:bg-[#1a1616] transition flex items-center gap-1.5 text-xs font-medium"
             title="Kembali ke Chat Playground"
           >
             <ArrowLeft className="w-4 h-4" />
             <span className="hidden sm:inline">Kembali ke Obrolan</span>
           </button>
 
-          <div className="h-4 w-px bg-[#2e3032]" />
+          <div className="h-4 w-px bg-[#241f1f]" />
 
           <div className="flex items-center gap-2">
-            <div className="w-6 h-6 rounded-md bg-[#d97736]/15 text-[#d97736] flex items-center justify-center font-bold text-xs border border-[#d97736]/30">
+            <div className="w-6 h-6 rounded-md bg-[#2E4540]/30 text-[#408175] flex items-center justify-center font-bold text-xs border border-[#408175]/30">
               <Sparkles className="w-3.5 h-3.5" />
             </div>
             <div>
               <h1 className="text-xs sm:text-sm font-semibold text-white tracking-tight flex items-center gap-2">
                 <span>{compiledData.appName}</span>
-                <span className="text-[10px] px-2 py-0.5 rounded-full bg-[#202124] text-[#d97736] border border-[#d97736]/40 font-mono">
+                <span className="text-[10px] px-2 py-0.5 rounded-full bg-[#1a1616] text-[#408175] border border-[#408175]/40 font-mono">
                   PRD Board
                 </span>
               </h1>
@@ -201,8 +201,8 @@ export function PrdBoardView({ appId }: PrdBoardViewProps) {
             onClick={() => setIsCursorActive(!isCursorActive)}
             className={`px-2.5 py-1.5 rounded-lg text-xs font-medium transition flex items-center gap-1.5 border ${
               isCursorActive
-                ? "bg-[#25272a] border-[#d97736]/50 text-[#d97736]"
-                : "bg-transparent border-[#3c4043] text-[#9aa0a6] hover:text-white"
+                ? "bg-[#2E4540]/30 border-[#408175]/50 text-[#408175]"
+                : "bg-transparent border-[#241f1f] text-[#9aa0a6] hover:text-white"
             }`}
             title="Toggle Animasi Kursor AI"
           >
@@ -213,11 +213,11 @@ export function PrdBoardView({ appId }: PrdBoardViewProps) {
           <button
             type="button"
             onClick={() => handleCopy(compiledData.readmeMarkdown, "readme_top")}
-            className="px-3 py-1.5 rounded-lg bg-[#25272a] hover:bg-[#2f3135] text-white text-xs font-medium transition flex items-center gap-1.5 border border-[#3c4043]"
+            className="px-3 py-1.5 rounded-lg bg-[#1a1616] hover:bg-[#241f1f] text-white text-xs font-medium transition flex items-center gap-1.5 border border-[#241f1f]"
             title="Salin README.md ke Clipboard"
           >
             {copiedSection === "readme_top" ? (
-              <Check className="w-3.5 h-3.5 text-emerald-400" />
+              <Check className="w-3.5 h-3.5 text-[#408175]" />
             ) : (
               <Copy className="w-3.5 h-3.5" />
             )}
@@ -227,7 +227,7 @@ export function PrdBoardView({ appId }: PrdBoardViewProps) {
           <button
             type="button"
             onClick={handleDownloadReadme}
-            className="px-3.5 py-1.5 rounded-lg bg-[#d97736] hover:bg-[#c26629] text-white text-xs font-semibold transition flex items-center gap-1.5 shadow-md"
+            className="px-3.5 py-1.5 rounded-lg bg-[#408175] hover:bg-[#4ea092] text-white text-xs font-semibold transition flex items-center gap-1.5 shadow-md shadow-[#408175]/20"
             title="Unduh README.md"
           >
             <Download className="w-3.5 h-3.5" />
@@ -239,8 +239,8 @@ export function PrdBoardView({ appId }: PrdBoardViewProps) {
       {/* Main Board Workspace */}
       <main className="flex-1 max-w-7xl w-full mx-auto p-4 sm:p-6 space-y-6">
         {/* Stitch-Style Step Progress Tracker */}
-        <div className="rounded-2xl border border-[#282a2c] bg-[#161719] p-4 shadow-xl">
-          <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 pb-3 border-b border-[#242527]">
+        <div className="rounded-2xl border border-[#241f1f] bg-[#141111] p-4 shadow-xl">
+          <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 pb-3 border-b border-[#241f1f]">
             <div className="flex items-center gap-2">
               <span className="w-2 h-2 rounded-full bg-emerald-400 animate-pulse" />
               <span className="text-xs font-semibold uppercase tracking-wider text-[#9aa0a6]">
@@ -281,7 +281,7 @@ export function PrdBoardView({ appId }: PrdBoardViewProps) {
             ].map((st, i) => (
               <div
                 key={i}
-                className="p-3 rounded-xl border border-[#282a2c] bg-[#1b1c1e] flex items-start gap-2.5"
+                className="p-3 rounded-xl border border-[#241f1f] bg-[#1a1616] flex items-start gap-2.5"
               >
                 <div className="w-6 h-6 rounded-full bg-emerald-500/15 text-emerald-400 border border-emerald-500/30 flex items-center justify-center shrink-0 mt-0.5">
                   <CheckCircle2 className="w-3.5 h-3.5" />
@@ -299,7 +299,7 @@ export function PrdBoardView({ appId }: PrdBoardViewProps) {
         </div>
 
         {/* Tab Navigation Navigation Bar */}
-        <div className="flex items-center gap-2 overflow-x-auto pb-1 scrollbar-none border-b border-[#282a2c]">
+        <div className="flex items-center gap-2 overflow-x-auto pb-1 scrollbar-none border-b border-[#241f1f]">
           {[
             { id: "readme", label: "README.md Dokumen PRD", icon: FileText },
             { id: "flow", label: "Diagram Alur Sistem", icon: Layers },
@@ -316,11 +316,11 @@ export function PrdBoardView({ appId }: PrdBoardViewProps) {
                 onClick={() => setActiveTab(tab.id as any)}
                 className={`px-4 py-2.5 rounded-xl text-xs font-semibold flex items-center gap-2 transition whitespace-nowrap border ${
                   isActive
-                    ? "bg-[#25272a] text-white border-[#d97736] shadow-md"
-                    : "bg-transparent text-[#9aa0a6] border-transparent hover:text-white hover:bg-[#1e1f20]"
+                    ? "bg-[#2E4540]/30 text-white border-[#408175] shadow-md"
+                    : "bg-transparent text-[#9aa0a6] border-transparent hover:text-white hover:bg-[#141111]"
                 }`}
               >
-                <Icon className={`w-3.5 h-3.5 ${isActive ? "text-[#d97736]" : "text-[#80868b]"}`} />
+                <Icon className={`w-3.5 h-3.5 ${isActive ? "text-[#408175]" : "text-[#80868b]"}`} />
                 <span>{tab.label}</span>
               </button>
             );
@@ -329,11 +329,11 @@ export function PrdBoardView({ appId }: PrdBoardViewProps) {
 
         {/* Tab 1: README.md Panel */}
         {activeTab === "readme" && (
-          <div className="rounded-2xl border border-[#282a2c] bg-[#161719] shadow-2xl overflow-hidden flex flex-col">
+          <div className="rounded-2xl border border-[#241f1f] bg-[#141111] shadow-2xl overflow-hidden flex flex-col">
             {/* README Panel Sub-header */}
-            <div className="px-5 py-3.5 bg-[#1b1c1e] border-b border-[#282a2c] flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+            <div className="px-5 py-3.5 bg-[#1a1616] border-b border-[#241f1f] flex flex-col sm:flex-row sm:items-center justify-between gap-3">
               <div className="flex items-center gap-2">
-                <span className="text-xs font-mono text-[#d97736]">README.md</span>
+                <span className="text-xs font-mono text-[#408175]">README.md</span>
                 <span className="text-[11px] text-[#80868b]">
                   • Disusun berdasarkan seluruh jawaban wawancara arsitektur
                 </span>
@@ -341,12 +341,12 @@ export function PrdBoardView({ appId }: PrdBoardViewProps) {
 
               <div className="flex items-center gap-2 self-start sm:self-auto">
                 {/* View Mode Toggle: Preview vs Raw */}
-                <div className="bg-[#202124] p-0.5 rounded-lg border border-[#3c4043] flex items-center">
+                <div className="bg-[#141111] p-0.5 rounded-lg border border-[#241f1f] flex items-center">
                   <button
                     type="button"
                     onClick={() => setReadmeViewMode("preview")}
                     className={`px-2.5 py-1 rounded-md text-[11px] font-medium flex items-center gap-1.5 transition ${
-                      readmeViewMode === "preview" ? "bg-[#2e3032] text-white shadow" : "text-[#9aa0a6] hover:text-white"
+                      readmeViewMode === "preview" ? "bg-[#2E4540]/40 text-white shadow" : "text-[#9aa0a6] hover:text-white"
                     }`}
                   >
                     <Eye className="w-3 h-3" />
@@ -356,7 +356,7 @@ export function PrdBoardView({ appId }: PrdBoardViewProps) {
                     type="button"
                     onClick={() => setReadmeViewMode("raw")}
                     className={`px-2.5 py-1 rounded-md text-[11px] font-medium flex items-center gap-1.5 transition ${
-                      readmeViewMode === "raw" ? "bg-[#2e3032] text-white shadow" : "text-[#9aa0a6] hover:text-white"
+                      readmeViewMode === "raw" ? "bg-[#2E4540]/40 text-white shadow" : "text-[#9aa0a6] hover:text-white"
                     }`}
                   >
                     <Code className="w-3 h-3" />
@@ -367,22 +367,22 @@ export function PrdBoardView({ appId }: PrdBoardViewProps) {
                 <button
                   type="button"
                   onClick={() => handleCopy(compiledData.readmeMarkdown, "readme_body")}
-                  className="px-2.5 py-1 rounded-lg bg-[#202124] hover:bg-[#2c2d30] text-[#c4c7c5] hover:text-white text-[11px] font-medium flex items-center gap-1.5 border border-[#3c4043] transition"
+                  className="px-2.5 py-1 rounded-lg bg-[#141111] hover:bg-[#1a1616] text-[#c4c7c5] hover:text-white text-[11px] font-medium flex items-center gap-1.5 border border-[#241f1f] transition"
                 >
-                  {copiedSection === "readme_body" ? <Check className="w-3 h-3 text-emerald-400" /> : <Copy className="w-3 h-3" />}
+                  {copiedSection === "readme_body" ? <Check className="w-3 h-3 text-[#408175]" /> : <Copy className="w-3 h-3" />}
                   <span>Salin Dokumen</span>
                 </button>
               </div>
             </div>
 
             {/* Content Area */}
-            <div className="p-6 sm:p-8 bg-[#131314]">
+            <div className="p-6 sm:p-8 bg-[#0B0909]">
               {readmeViewMode === "preview" ? (
                 <div className="max-w-4xl mx-auto prose prose-invert prose-headings:font-semibold prose-h1:text-2xl prose-h2:text-xl prose-p:text-[#d0d0d0] prose-li:text-[#d0d0d0]">
                   <MarkdownRenderer content={compiledData.readmeMarkdown} />
                 </div>
               ) : (
-                <pre className="max-w-5xl mx-auto font-mono text-[12.5px] leading-relaxed text-[#c4c7c5] bg-[#0d0e0f] p-5 rounded-xl border border-[#282a2c] overflow-x-auto whitespace-pre-wrap select-text">
+                <pre className="max-w-5xl mx-auto font-mono text-[12.5px] leading-relaxed text-[#c4c7c5] bg-[#0B0909] p-5 rounded-xl border border-[#241f1f] overflow-x-auto whitespace-pre-wrap select-text">
                   {compiledData.readmeMarkdown}
                 </pre>
               )}
@@ -399,7 +399,7 @@ export function PrdBoardView({ appId }: PrdBoardViewProps) {
                 language="flow-json"
               />
             ) : (
-              <div className="p-8 text-center text-xs text-[#80868b] border border-[#282a2c] rounded-2xl bg-[#141517]">
+              <div className="p-8 text-center text-xs text-[#80868b] border border-[#241f1f] rounded-2xl bg-[#141111]">
                 Belum ada diagram alur yang dihasilkan di sesi obrolan ini.
               </div>
             )}
@@ -408,23 +408,23 @@ export function PrdBoardView({ appId }: PrdBoardViewProps) {
 
         {/* Tab 3: Database Schema SQL */}
         {activeTab === "database" && (
-          <div className="rounded-2xl border border-[#282a2c] bg-[#161719] shadow-xl overflow-hidden flex flex-col">
-            <div className="px-5 py-3.5 bg-[#1b1c1e] border-b border-[#282a2c] flex items-center justify-between">
+          <div className="rounded-2xl border border-[#241f1f] bg-[#141111] shadow-xl overflow-hidden flex flex-col">
+            <div className="px-5 py-3.5 bg-[#1a1616] border-b border-[#241f1f] flex items-center justify-between">
               <div className="flex items-center gap-2">
-                <Database className="w-4 h-4 text-[#d97736]" />
+                <Database className="w-4 h-4 text-[#408175]" />
                 <span className="text-xs font-semibold text-white">PostgreSQL 15+ Schema DDL (Anti-Race Condition)</span>
               </div>
               <button
                 type="button"
                 onClick={() => handleCopy(compiledData.databaseSchemaSql, "db_sql")}
-                className="px-2.5 py-1 rounded-lg bg-[#202124] hover:bg-[#2c2d30] text-[#c4c7c5] hover:text-white text-[11px] font-medium flex items-center gap-1.5 border border-[#3c4043] transition"
+                className="px-2.5 py-1 rounded-lg bg-[#141111] hover:bg-[#1a1616] text-[#c4c7c5] hover:text-white text-[11px] font-medium flex items-center gap-1.5 border border-[#241f1f] transition"
               >
-                {copiedSection === "db_sql" ? <Check className="w-3 h-3 text-emerald-400" /> : <Copy className="w-3 h-3" />}
+                {copiedSection === "db_sql" ? <Check className="w-3 h-3 text-[#408175]" /> : <Copy className="w-3 h-3" />}
                 <span>Salin Script SQL</span>
               </button>
             </div>
-            <div className="p-5 bg-[#0d0e0f] overflow-x-auto">
-              <pre className="font-mono text-xs text-[#38bdf8] leading-relaxed select-text">
+            <div className="p-5 bg-[#0B0909] overflow-x-auto">
+              <pre className="font-mono text-xs text-[#408175] leading-relaxed select-text">
                 {compiledData.databaseSchemaSql}
               </pre>
             </div>
@@ -439,7 +439,7 @@ export function PrdBoardView({ appId }: PrdBoardViewProps) {
                 rawJson={JSON.stringify(compiledData.dribbbleDesigns, null, 2)}
               />
             ) : (
-              <div className="p-8 text-center text-xs text-[#80868b] border border-[#282a2c] rounded-2xl bg-[#141517]">
+              <div className="p-8 text-center text-xs text-[#80868b] border border-[#241f1f] rounded-2xl bg-[#141111]">
                 Belum ada inspirasi desain Dribbble yang terhubung.
               </div>
             )}
@@ -448,10 +448,10 @@ export function PrdBoardView({ appId }: PrdBoardViewProps) {
 
         {/* Tab 5: AI Coding Agent Prompt */}
         {activeTab === "agent" && (
-          <div className="rounded-2xl border border-[#282a2c] bg-[#161719] shadow-xl p-6 space-y-4">
-            <div className="flex items-center justify-between pb-3 border-b border-[#282a2c]">
+          <div className="rounded-2xl border border-[#241f1f] bg-[#141111] shadow-xl p-6 space-y-4">
+            <div className="flex items-center justify-between pb-3 border-b border-[#241f1f]">
               <div className="flex items-center gap-2.5">
-                <div className="w-7 h-7 rounded-lg bg-[#d97736]/15 text-[#d97736] flex items-center justify-center font-bold text-xs border border-[#d97736]/30">
+                <div className="w-7 h-7 rounded-lg bg-[#2E4540]/30 text-[#408175] flex items-center justify-center font-bold text-xs border border-[#408175]/30">
                   <Cpu className="w-4 h-4" />
                 </div>
                 <div>
@@ -467,14 +467,14 @@ export function PrdBoardView({ appId }: PrdBoardViewProps) {
               <button
                 type="button"
                 onClick={() => handleCopy(compiledData.agentPrompt, "agent_prompt")}
-                className="px-3 py-1.5 rounded-lg bg-[#d97736] hover:bg-[#c26629] text-white text-xs font-semibold flex items-center gap-1.5 transition shadow"
+                className="px-3 py-1.5 rounded-lg bg-[#408175] hover:bg-[#4ea092] text-white text-xs font-semibold flex items-center gap-1.5 transition shadow shadow-[#408175]/20"
               >
                 {copiedSection === "agent_prompt" ? <Check className="w-3.5 h-3.5 text-white" /> : <Copy className="w-3.5 h-3.5" />}
                 <span>Salin Prompt Master</span>
               </button>
             </div>
 
-            <div className="p-4 rounded-xl bg-[#0d0e0f] border border-[#282a2c]">
+            <div className="p-4 rounded-xl bg-[#0B0909] border border-[#241f1f]">
               <pre className="font-mono text-xs text-[#e3e3e3] leading-relaxed whitespace-pre-wrap select-text">
                 {compiledData.agentPrompt}
               </pre>

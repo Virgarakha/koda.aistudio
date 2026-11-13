@@ -198,14 +198,14 @@ export function DiscoveryQuestionsCard({
   };
 
   return (
-    <div className="my-6 rounded-2xl border border-[#2e3032] bg-[#141517] p-5 sm:p-7 shadow-xl space-y-6">
+    <div className="my-6 rounded-2xl border border-[#241f1f] bg-[#141111] p-5 sm:p-7 shadow-xl space-y-6">
       <form onSubmit={handleSubmit} className="space-y-6">
         {questions.map((q, idx) => {
           const val = answers[q.id];
 
           return (
             <div key={q.id} className="space-y-3">
-              {idx > 0 && <hr className="border-[#26282a] my-4" />}
+              {idx > 0 && <hr className="border-[#241f1f] my-4" />}
 
               {/* Title & Description */}
               <div className="space-y-0.5">
@@ -273,7 +273,7 @@ export function DiscoveryQuestionsCard({
                         <div
                           className={`w-4 h-4 rounded-md border shrink-0 mt-0.5 flex items-center justify-center transition ${
                             isChecked
-                              ? "border-white bg-white text-[#131314]"
+                              ? "border-[#408175] bg-[#408175] text-white"
                               : "border-[#5f6368] group-hover:border-[#9aa0a6]"
                           }`}
                         >
@@ -298,7 +298,7 @@ export function DiscoveryQuestionsCard({
                     value={val || ""}
                     onChange={(e) => handleTextChange(q.id, e.target.value)}
                     placeholder={q.placeholder || "Ketik jawaban..."}
-                    className="w-full bg-[#111213] border border-[#3c4043] focus:border-[#5a5d61] rounded-full px-4 py-2 text-xs sm:text-sm text-white placeholder-[#80868b] focus:outline-none transition"
+                    className="w-full bg-[#0B0909] border border-[#241f1f] focus:border-[#408175]/60 rounded-full px-4 py-2 text-xs sm:text-sm text-white placeholder-[#80868b] focus:outline-none transition"
                   />
                 </div>
               )}
@@ -310,7 +310,7 @@ export function DiscoveryQuestionsCard({
                     value={val || ""}
                     onChange={(e) => handleTextChange(q.id, e.target.value)}
                     placeholder={q.placeholder || "Ketik penjelasan..."}
-                    className="w-full bg-[#111213] border border-[#3c4043] focus:border-[#5a5d61] rounded-xl px-3.5 py-2 text-xs sm:text-sm text-white placeholder-[#80868b] focus:outline-none transition leading-relaxed resize-y"
+                    className="w-full bg-[#0B0909] border border-[#241f1f] focus:border-[#408175]/60 rounded-xl px-3.5 py-2 text-xs sm:text-sm text-white placeholder-[#80868b] focus:outline-none transition leading-relaxed resize-y"
                   />
                 </div>
               )}
@@ -322,10 +322,10 @@ export function DiscoveryQuestionsCard({
         <div className="pt-4">
           <button
             type="submit"
-            className="w-full py-3 px-4 rounded-full bg-[#f1f3f4] hover:bg-white text-[#131314] font-semibold text-xs sm:text-sm flex items-center justify-center gap-2 transition cursor-pointer shadow-md active:scale-[0.99]"
+            className="w-full py-3 px-4 rounded-full bg-[#408175] hover:bg-[#4ea092] text-white font-semibold text-xs sm:text-sm flex items-center justify-center gap-2 transition cursor-pointer shadow-md shadow-[#408175]/20 active:scale-[0.99]"
           >
             <span>Lanjutkan Discovery</span>
-            <ArrowRight className="w-4 h-4 text-[#131314]" />
+            <ArrowRight className="w-4 h-4 text-white" />
           </button>
         </div>
       </form>

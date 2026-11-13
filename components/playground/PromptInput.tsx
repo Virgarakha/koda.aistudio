@@ -16,6 +16,10 @@ import {
   ChevronUp,
   FileText,
   Image as ImageIcon,
+  TrendingUp,
+  CheckSquare,
+  Store,
+  Users,
 } from "lucide-react";
 import { GoogleIcon } from "./GoogleIcon";
 import { AiTool, AVAILABLE_AI_TOOLS } from "@/lib/ai/tools";
@@ -29,8 +33,10 @@ interface PromptInputProps {
   groundingEnabled: boolean;
   onToggleGrounding: () => void;
   onOpenToolsModal?: () => void;
-  selectedTool: AiTool | null;
-  onSelectTool: (tool: AiTool | null) => void;
+  selectedTool?: AiTool | null;
+  onSelectTool?: (tool: AiTool | null) => void;
+  showToolsMenu?: boolean;
+  placeholder?: string;
 }
 
 export function PromptInput({
@@ -41,8 +47,10 @@ export function PromptInput({
   groundingEnabled,
   onToggleGrounding,
   onOpenToolsModal,
-  selectedTool,
+  selectedTool = null,
   onSelectTool,
+  showToolsMenu = false,
+  placeholder,
 }: PromptInputProps) {
   const textareaRef = useRef<HTMLTextAreaElement>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
@@ -226,21 +234,33 @@ export function PromptInput({
   const getToolIcon = (iconName: string) => {
     switch (iconName) {
       case "FileSpreadsheet":
-        return <FileSpreadsheet className="w-4 h-4 text-[#d97736]" />;
+        return <FileSpreadsheet className="w-4 h-4 text-[#408175]" />;
       case "Palette":
-        return <Palette className="w-4 h-4 text-[#f28b82]" />;
+        return <Palette className="w-4 h-4 text-[#B5B9F0]" />;
       case "Atom":
         return <Atom className="w-4 h-4 text-[#81c995]" />;
       case "Telescope":
         return <Telescope className="w-4 h-4 text-[#c58af9]" />;
+      case "FileText":
+        return <FileText className="w-4 h-4 text-[#8ab4f8]" />;
+      case "TrendingUp":
+        return <TrendingUp className="w-4 h-4 text-[#fbbc04]" />;
+      case "CheckSquare":
+        return <CheckSquare className="w-4 h-4 text-[#ea4335]" />;
+      case "Store":
+        return <Store className="w-4 h-4 text-[#ff7043]" />;
+      case "Users":
+        return <Users className="w-4 h-4 text-[#a142f4]" />;
       default:
-        return <Sparkles className="w-4 h-4 text-[#d97736]" />;
+        return <Sparkles className="w-4 h-4 text-[#408175]" />;
     }
   };
 
-  const currentPlaceholder = selectedTool
-    ? selectedTool.placeholder
-    : "Ketik pesan untuk obrolan biasa atau pilih Tools untuk spesialisasi...";
+  const currentPlaceholder =
+    placeholder ||
+    (selectedTool
+      ? selectedTool.placeholder
+      : "Tanyakan apa saja ke Koda AI... (Ketik pesan atau lampirkan berkas)");
 
   return (
     <div className="w-full max-w-4xl mx-auto px-4 pb-4">
@@ -249,16 +269,16 @@ export function PromptInput({
         onDragOver={handleDragOver}
         onDragLeave={handleDragLeave}
         onDrop={handleDrop}
-        className={`relative rounded-2xl bg-[#1e1f20] border transition-all duration-200 shadow-2xl ${
+        className={`relative rounded-2xl bg-[#141111] border transition-all duration-200 shadow-2xl ${
           isDraggingOver
-            ? "border-[#d97736] ring-2 ring-[#d97736]/30 bg-[#252321]"
-            : "border-[#3c4043] focus-within:border-[#5a5d61]"
+            ? "border-[#408175] ring-2 ring-[#408175]/30 bg-[#1a1616]"
+            : "border-[#241f1f] focus-within:border-[#408175]/60"
         }`}
       >
         {/* Drag & drop overlay indicator */}
         {isDraggingOver && (
-          <div className="absolute inset-0 z-20 rounded-2xl bg-[#1e1f20]/95 border-2 border-dashed border-[#d97736] flex items-center justify-center pointer-events-none backdrop-blur-xs">
-            <div className="flex items-center gap-2 text-sm font-semibold text-[#d97736] bg-[#29221d] px-4 py-2 rounded-xl border border-[#d97736]/40 shadow-lg">
+          <div className="absolute inset-0 z-20 rounded-2xl bg-[#141111]/95 border-2 border-dashed border-[#408175] flex items-center justify-center pointer-events-none backdrop-blur-xs">
+            <div className="flex items-center gap-2 text-sm font-semibold text-[#408175] bg-[#1a1616] px-4 py-2 rounded-xl border border-[#408175]/40 shadow-lg">
               <ImageIcon className="w-5 h-5 animate-pulse" />
               <span>Lepaskan gambar di sini untuk dilampirkan</span>
             </div>
@@ -266,10 +286,10 @@ export function PromptInput({
         )}
         
         {/* Active Embedded Tool Banner */}
-        {selectedTool && (
-          <div className="flex items-center justify-between px-3.5 py-1.5 bg-[#252729] border-b border-[#35373a] rounded-t-2xl text-xs animate-in fade-in slide-in-from-bottom-1 duration-150">
+        {selectedTool && showToolsMenu && (
+          <div className="flex items-center justify-between px-3.5 py-1.5 bg-[#1a1616] border-b border-[#241f1f] rounded-t-2xl text-xs animate-in fade-in slide-in-from-bottom-1 duration-150">
             <div className="flex items-center gap-2">
-              <div className="p-1 rounded-md bg-[#18191a]">
+              <div className="p-1 rounded-md bg-[#141111]">
                 {getToolIcon(selectedTool.iconName)}
               </div>
               <div className="flex items-center gap-1.5">
@@ -277,7 +297,7 @@ export function PromptInput({
                   {selectedTool.name}
                 </span>
                 {selectedTool.badge && (
-                  <span className="text-[10px] font-medium px-1.5 py-0.5 rounded bg-[#35373a] text-[#c4c7c5]">
+                  <span className="text-[10px] font-medium px-1.5 py-0.5 rounded bg-[#241f1f] text-[#c4c7c5]">
                     {selectedTool.badge}
                   </span>
                 )}
@@ -287,15 +307,17 @@ export function PromptInput({
               </div>
             </div>
 
-            <button
-              type="button"
-              onClick={() => onSelectTool(null)}
-              className="flex items-center gap-1 text-[11px] text-[#9aa0a6] hover:text-white px-2 py-0.5 rounded hover:bg-[#35373a] transition"
-              title="Kembali ke obrolan AI biasa"
-            >
-              <span>Lepas Tool</span>
-              <X className="w-3.5 h-3.5 text-[#9aa0a6]" />
-            </button>
+            {onSelectTool && (
+              <button
+                type="button"
+                onClick={() => onSelectTool(null)}
+                className="flex items-center gap-1 text-[11px] text-[#9aa0a6] hover:text-white px-2 py-0.5 rounded hover:bg-[#35373a] transition"
+                title="Kembali ke obrolan AI biasa"
+              >
+                <span>Lepas Tool</span>
+                <X className="w-3.5 h-3.5 text-[#9aa0a6]" />
+              </button>
+            )}
           </div>
         )}
 
@@ -311,14 +333,14 @@ export function PromptInput({
 
         {/* Attachment Previews Strip */}
         {attachments.length > 0 && (
-          <div className="flex flex-wrap items-center gap-2.5 px-4 pt-3 pb-1 border-b border-[#2d3032] animate-in fade-in duration-150">
+          <div className="flex flex-wrap items-center gap-2.5 px-4 pt-3 pb-1 border-b border-[#241f1f] animate-in fade-in duration-150">
             {attachments.map((file, idx) => (
               <div
                 key={idx}
-                className="relative group flex items-center gap-2 bg-[#282a2c] hover:bg-[#303336] border border-[#3c4043] rounded-xl px-2.5 py-1.5 transition text-xs shadow-sm"
+                className="relative group flex items-center gap-2 bg-[#1a1616] hover:bg-[#241f1f] border border-[#241f1f] rounded-xl px-2.5 py-1.5 transition text-xs shadow-sm"
               >
                 {file.type.startsWith("image/") ? (
-                  <div className="relative w-8 h-8 rounded-lg overflow-hidden shrink-0 border border-[#444746] bg-black/40">
+                  <div className="relative w-8 h-8 rounded-lg overflow-hidden shrink-0 border border-[#241f1f] bg-black/40">
                     <img
                       src={file.data}
                       alt={file.name}
@@ -326,7 +348,7 @@ export function PromptInput({
                     />
                   </div>
                 ) : (
-                  <div className="p-1.5 rounded-lg bg-[#1f2022] text-[#d97736] shrink-0">
+                  <div className="p-1.5 rounded-lg bg-[#141111] text-[#408175] shrink-0">
                     <FileText className="w-4 h-4" />
                   </div>
                 )}
@@ -344,7 +366,7 @@ export function PromptInput({
                 <button
                   type="button"
                   onClick={() => handleRemoveAttachment(idx)}
-                  className="p-1 text-[#9aa0a6] hover:text-red-400 hover:bg-[#3c4043] rounded-full transition"
+                  className="p-1 text-[#9aa0a6] hover:text-red-400 hover:bg-[#241f1f] rounded-full transition"
                   title="Hapus file"
                 >
                   <X className="w-3.5 h-3.5" />
@@ -374,7 +396,7 @@ export function PromptInput({
             <button
               type="button"
               onClick={() => fileInputRef.current?.click()}
-              className="p-1.5 text-[#9aa0a6] hover:text-[#f1f3f4] hover:bg-[#282a2c] rounded-full transition"
+              className="p-1.5 text-[#9aa0a6] hover:text-[#f1f3f4] hover:bg-[#1a1616] rounded-full transition"
               title="Unggah berkas atau tekan Ctrl+V untuk menempelkan gambar dari clipboard"
             >
               <Plus className="w-4 h-4" />
@@ -384,142 +406,157 @@ export function PromptInput({
             <button
               type="button"
               onClick={onOpenToolsModal}
-              className="p-1.5 text-[#9aa0a6] hover:text-[#f1f3f4] hover:bg-[#282a2c] rounded-full transition"
+              className="p-1.5 text-[#9aa0a6] hover:text-[#f1f3f4] hover:bg-[#1a1616] rounded-full transition"
               title="Tune parameters & settings"
             >
               <SlidersHorizontal className="w-4 h-4" />
             </button>
 
-            {/* Tools Dropup Menu Container */}
-            <div className="relative" ref={toolsMenuRef}>
-              <button
-                type="button"
-                onClick={() => setToolsOpen(!toolsOpen)}
-                className={`flex items-center gap-1.5 px-2.5 py-1 text-xs rounded-lg transition ${
-                  selectedTool
-                    ? "bg-[#2d3238] text-[#d97736] border border-[#d97736]/40"
-                    : "text-[#c4c7c5] hover:text-white hover:bg-[#282a2c]"
-                }`}
-              >
-                <Wrench className="w-3.5 h-3.5" />
-                <span className="font-medium">
-                  {selectedTool ? selectedTool.name : "Tools"}
-                </span>
-                <ChevronUp
-                  className={`w-3.5 h-3.5 transition-transform duration-200 ${
-                    toolsOpen ? "rotate-180" : ""
+            {/* Tools Dropup Menu Container (Only shown when showToolsMenu is enabled) */}
+            {showToolsMenu && (
+              <div className="relative flex items-center" ref={toolsMenuRef}>
+                <button
+                  type="button"
+                  onClick={() => setToolsOpen(!toolsOpen)}
+                  className={`flex items-center gap-1.5 px-2.5 py-1 text-xs rounded-lg transition ${
+                    selectedTool
+                      ? "bg-[#2E4540]/40 text-[#408175] border border-[#408175]/40"
+                      : "text-[#c4c7c5] hover:text-white hover:bg-[#1a1616]"
                   }`}
-                />
-              </button>
+                >
+                  <Wrench className="w-3.5 h-3.5" />
+                  <span className="font-medium">
+                    {selectedTool ? selectedTool.name : "Tools"}
+                  </span>
+                  <ChevronUp
+                    className={`w-3.5 h-3.5 transition-transform duration-200 ${
+                      toolsOpen ? "rotate-180" : ""
+                    }`}
+                  />
+                </button>
+                {selectedTool && onSelectTool && (
+                  <button
+                    type="button"
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      onSelectTool(null);
+                    }}
+                    className="ml-0.5 p-1 text-[#9aa0a6] hover:text-white hover:bg-[#1a1616] rounded-full transition"
+                    title="Hapus tool & kembali ke obrolan biasa"
+                  >
+                    <X className="w-3 h-3" />
+                  </button>
+                )}
 
-              {/* Dropup Menu Popover */}
-              {toolsOpen && (
-                <div className="absolute bottom-full left-0 mb-2 w-80 sm:w-96 bg-[#1e1f20] border border-[#3c4043] rounded-2xl shadow-2xl p-2 z-50 animate-in fade-in slide-in-from-bottom-2 duration-150">
-                  <div className="px-3 py-2 border-b border-[#2e3032] flex items-center justify-between">
-                    <div>
-                      <h4 className="text-xs font-semibold text-white">
-                        Pilih AI Tool / Konteks
-                      </h4>
-                      <p className="text-[11px] text-[#9aa0a6]">
-                        Konteks AI akan otomatis tertanam ke dalam chat
-                      </p>
-                    </div>
-                    {selectedTool && (
-                      <button
-                        onClick={() => {
-                          onSelectTool(null);
-                          setToolsOpen(false);
-                        }}
-                        className="text-[10.5px] text-[#d97736] hover:underline"
-                      >
-                        Reset ke Biasa
-                      </button>
-                    )}
-                  </div>
-
-                  <div className="py-1 space-y-1 max-h-72 overflow-y-auto">
-                    {/* General Chat Option */}
-                    <button
-                      type="button"
-                      onClick={() => {
-                        onSelectTool(null);
-                        setToolsOpen(false);
-                      }}
-                      className={`w-full flex items-start gap-3 p-2.5 rounded-xl text-left transition ${
-                        selectedTool === null
-                          ? "bg-[#2a2c2e] border border-[#444746]"
-                          : "hover:bg-[#282a2c]"
-                      }`}
-                    >
-                      <div className="p-2 rounded-lg bg-[#18191a] text-[#9aa0a6] shrink-0 mt-0.5">
-                        <Sparkles className="w-4 h-4 text-emerald-400" />
-                      </div>
-                      <div className="flex-1 min-w-0">
-                        <div className="flex items-center justify-between">
-                          <span className="text-xs font-semibold text-white">
-                            Obrolan Biasa
-                          </span>
-                          {selectedTool === null && (
-                            <Check className="w-3.5 h-3.5 text-emerald-400" />
-                          )}
-                        </div>
-                        <p className="text-[11px] text-[#9aa0a6] leading-relaxed">
-                          Asisten AI serbaguna untuk percakapan santai, tanya jawab umum, dan ide bebas tanpa konteks khusus.
+                {/* Dropup Menu Popover */}
+                {toolsOpen && (
+                  <div className="absolute bottom-full left-0 mb-2 w-80 sm:w-96 bg-[#141111] border border-[#241f1f] rounded-2xl shadow-2xl p-2 z-50 animate-in fade-in slide-in-from-bottom-2 duration-150">
+                    <div className="px-3 py-2 border-b border-[#241f1f] flex items-center justify-between">
+                      <div>
+                        <h4 className="text-xs font-semibold text-white">
+                          Pilih AI Tool / Konteks
+                        </h4>
+                        <p className="text-[11px] text-[#9aa0a6]">
+                          Konteks AI akan otomatis tertanam ke dalam chat
                         </p>
                       </div>
-                    </button>
-
-                    {/* Specialized AI Tools */}
-                    {AVAILABLE_AI_TOOLS.map((tool) => {
-                      const isSelected = selectedTool?.id === tool.id;
-                      return (
+                      {selectedTool && onSelectTool && (
                         <button
-                          key={tool.id}
-                          type="button"
                           onClick={() => {
-                            onSelectTool(tool);
+                            onSelectTool(null);
                             setToolsOpen(false);
                           }}
-                          className={`w-full flex items-start gap-3 p-2.5 rounded-xl text-left transition ${
-                            isSelected
-                              ? "bg-[#2a2c2e] border border-[#d97736]/50"
-                              : "hover:bg-[#282a2c]"
-                          }`}
+                          className="text-[10.5px] text-[#408175] hover:underline"
                         >
-                          <div className="p-2 rounded-lg bg-[#18191a] shrink-0 mt-0.5">
-                            {getToolIcon(tool.iconName)}
+                          Reset ke Biasa
+                        </button>
+                      )}
+                    </div>
+
+                    <div className="py-1 space-y-1 max-h-72 overflow-y-auto">
+                      {/* General Chat Option */}
+                      <button
+                        type="button"
+                        onClick={() => {
+                          if (onSelectTool) onSelectTool(null);
+                          setToolsOpen(false);
+                        }}
+                        className={`w-full flex items-start gap-3 p-2.5 rounded-xl text-left transition ${
+                          selectedTool === null
+                            ? "bg-[#1a1616] border border-[#408175]/40"
+                            : "hover:bg-[#1a1616]"
+                        }`}
+                      >
+                        <div className="p-2 rounded-lg bg-[#141111] text-[#9aa0a6] shrink-0 mt-0.5">
+                          <Sparkles className="w-4 h-4 text-[#408175]" />
+                        </div>
+                        <div className="flex-1 min-w-0">
+                          <div className="flex items-center justify-between">
+                            <span className="text-xs font-semibold text-white">
+                              Obrolan Biasa
+                            </span>
+                            {selectedTool === null && (
+                              <Check className="w-3.5 h-3.5 text-[#408175]" />
+                            )}
                           </div>
-                          <div className="flex-1 min-w-0">
-                            <div className="flex items-center justify-between">
-                              <div className="flex items-center gap-1.5">
-                                <span className="text-xs font-semibold text-white">
-                                  {tool.name}
-                                </span>
-                                {tool.badge && (
-                                  <span className="text-[9.5px] font-medium px-1.5 py-0.2 rounded bg-[#35373a] text-[#d97736]">
-                                    {tool.badge}
+                          <p className="text-[11px] text-[#9aa0a6] leading-relaxed">
+                            Asisten AI serbaguna untuk percakapan santai, tanya jawab umum, dan ide bebas tanpa konteks khusus.
+                          </p>
+                        </div>
+                      </button>
+
+                      {/* Specialized AI Tools */}
+                      {AVAILABLE_AI_TOOLS.map((tool) => {
+                        const isSelected = selectedTool?.id === tool.id;
+                        return (
+                          <button
+                            key={tool.id}
+                            type="button"
+                            onClick={() => {
+                              if (onSelectTool) onSelectTool(tool);
+                              setToolsOpen(false);
+                            }}
+                            className={`w-full flex items-start gap-3 p-2.5 rounded-xl text-left transition ${
+                              isSelected
+                                ? "bg-[#2E4540]/30 border border-[#408175]/50"
+                                : "hover:bg-[#1a1616]"
+                            }`}
+                          >
+                            <div className="p-2 rounded-lg bg-[#141111] shrink-0 mt-0.5">
+                              {getToolIcon(tool.iconName)}
+                            </div>
+                            <div className="flex-1 min-w-0">
+                              <div className="flex items-center justify-between">
+                                <div className="flex items-center gap-1.5">
+                                  <span className="text-xs font-semibold text-white">
+                                    {tool.name}
                                   </span>
+                                  {tool.badge && (
+                                    <span className="text-[9.5px] font-medium px-1.5 py-0.2 rounded bg-[#2E4540]/40 text-[#408175] border border-[#408175]/30">
+                                      {tool.badge}
+                                    </span>
+                                  )}
+                                </div>
+                                {isSelected && (
+                                  <Check className="w-3.5 h-3.5 text-[#408175]" />
                                 )}
                               </div>
-                              {isSelected && (
-                                <Check className="w-3.5 h-3.5 text-[#d97736]" />
-                              )}
+                              <p className="text-[11px] text-[#9aa0a6] leading-relaxed mt-0.5 line-clamp-2">
+                                {tool.shortDesc}
+                              </p>
                             </div>
-                            <p className="text-[11px] text-[#9aa0a6] leading-relaxed mt-0.5 line-clamp-2">
-                              {tool.shortDesc}
-                            </p>
-                          </div>
-                        </button>
-                      );
-                    })}
+                          </button>
+                        );
+                      })}
+                    </div>
                   </div>
-                </div>
-              )}
-            </div>
+                )}
+              </div>
+            )}
 
             {/* Grounding Active Badge */}
             {groundingEnabled && (
-              <div className="inline-flex items-center gap-1.5 bg-[#282a2c] border border-[#3c4043] rounded-full px-2.5 py-1 text-xs text-[#f1f3f4] animate-in fade-in zoom-in-95 duration-150">
+              <div className="inline-flex items-center gap-1.5 bg-[#1a1616] border border-[#241f1f] rounded-full px-2.5 py-1 text-xs text-[#f1f3f4] animate-in fade-in zoom-in-95 duration-150">
                 <GoogleIcon className="w-3 h-3" />
                 <span className="text-[11.5px] font-medium">
                   Grounding with Google Search
@@ -527,7 +564,7 @@ export function PromptInput({
                 <button
                   type="button"
                   onClick={onToggleGrounding}
-                  className="hover:text-red-400 p-0.5 rounded-full hover:bg-[#3c4043] transition ml-0.5"
+                  className="hover:text-red-400 p-0.5 rounded-full hover:bg-[#241f1f] transition ml-0.5"
                   title="Remove search grounding"
                 >
                   <X className="w-3 h-3 text-[#9aa0a6]" />
@@ -541,21 +578,21 @@ export function PromptInput({
             {/* Mic */}
             <button
               type="button"
-              className="p-2 text-[#9aa0a6] hover:text-[#f1f3f4] hover:bg-[#282a2c] rounded-full transition"
+              className="p-2 text-[#9aa0a6] hover:text-[#f1f3f4] hover:bg-[#1a1616] rounded-full transition"
               title="Voice input"
             >
               <Mic className="w-4 h-4" />
             </button>
 
-            {/* Run Button (Claude Warm Terracotta Orange) */}
+            {/* Run Button */}
             <button
               type="button"
               onClick={handleTriggerSubmit}
               disabled={(!value.trim() && attachments.length === 0) || isLoading}
               className={`flex items-center gap-2 px-3.5 py-1.5 rounded-lg text-xs font-semibold transition ${
                 (value.trim() || attachments.length > 0) && !isLoading
-                  ? "bg-[#d97736] text-white hover:bg-[#e58849] shadow-md cursor-pointer"
-                  : "bg-[#282a2c] text-[#80868b] cursor-not-allowed"
+                  ? "bg-[#408175] text-white hover:bg-[#4ea092] shadow-md shadow-[#408175]/20 cursor-pointer"
+                  : "bg-[#1a1616] text-[#80868b] border border-[#241f1f] cursor-not-allowed"
               }`}
             >
               <span>Run</span>

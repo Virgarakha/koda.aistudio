@@ -92,7 +92,7 @@ export function ProductDiscoveryCard({
       </div>
 
       {/* Main Card Container */}
-      <div className="rounded-2xl border border-[#2e3032] bg-[#161718] p-5 sm:p-7 shadow-xl space-y-5">
+      <div className="rounded-2xl border border-[#241f1f] bg-[#141111] p-5 sm:p-7 shadow-xl space-y-5">
         {/* Card Header */}
         <div className="space-y-1 pb-1">
           <h2 className="text-base sm:text-lg font-bold text-white tracking-tight">
@@ -114,15 +114,15 @@ export function ProductDiscoveryCard({
               onChange={(e) => setIdea(e.target.value)}
               rows={3}
               placeholder="Contoh: Platform booking kos mahasiswa di Malang, toko online thrift shop, aplikasi kasir laundry..."
-              className="w-full bg-[#111213] border border-[#3c4043] focus:border-[#5a5d61] rounded-xl px-3.5 py-2.5 text-xs sm:text-sm text-white placeholder-[#80868b] focus:outline-none transition leading-relaxed resize-y"
+              className="w-full bg-[#0B0909] border border-[#241f1f] focus:border-[#408175]/60 rounded-xl px-3.5 py-2.5 text-xs sm:text-sm text-white placeholder-[#80868b] focus:outline-none transition leading-relaxed resize-y"
             />
           </div>
 
           {/* Question 2: Ceritakan tentang dirimu (Pemahaman tentang IT) */}
-          <div className="space-y-2 pt-1 border-t border-[#26282a] pt-3.5">
+          <div className="space-y-2 pt-1 border-t border-[#241f1f] pt-3.5">
             <div className="space-y-0.5">
               <label className="text-xs font-semibold text-white flex items-center gap-1.5">
-                <UserCircle className="w-4 h-4 text-[#d97736]" />
+                <UserCircle className="w-4 h-4 text-[#408175]" />
                 <span>2. Ceritakan tentang dirimu: Apakah kamu tahu tentang IT?</span>
               </label>
               <p className="text-[11.5px] text-[#9aa0a6] leading-relaxed">
@@ -139,19 +139,19 @@ export function ProductDiscoveryCard({
                     onClick={() => setUserBackground(opt.id)}
                     className={`flex items-start gap-3 p-3 rounded-xl border cursor-pointer select-none transition ${
                       isSelected
-                        ? "border-[#d97736] bg-[#d97736]/10 text-white"
-                        : "border-[#2e3032] bg-[#121314] text-[#c4c7c5] hover:border-[#444746] hover:text-white"
+                        ? "border-[#408175] bg-[#2E4540]/30 text-white"
+                        : "border-[#241f1f] bg-[#0B0909] text-[#c4c7c5] hover:border-[#408175]/40 hover:text-white"
                     }`}
                   >
                     <div
                       className={`w-4 h-4 rounded-full border mt-0.5 flex items-center justify-center shrink-0 transition ${
                         isSelected
-                          ? "border-[#d97736] bg-transparent"
+                          ? "border-[#408175] bg-transparent"
                           : "border-[#5f6368]"
                       }`}
                     >
                       {isSelected && (
-                        <div className="w-2 h-2 rounded-full bg-[#d97736]" />
+                        <div className="w-2 h-2 rounded-full bg-[#408175]" />
                       )}
                     </div>
                     <div className="space-y-0.5">
@@ -169,7 +169,7 @@ export function ProductDiscoveryCard({
           </div>
 
           {/* Question 3: Siapa target penggunanya? */}
-          <div className="space-y-1.5 pt-1 border-t border-[#26282a] pt-3.5">
+          <div className="space-y-1.5 pt-1 border-t border-[#241f1f] pt-3.5">
             <label className="text-xs font-medium text-[#e3e3e3] block">
               3. Siapa target penggunanya?
             </label>
@@ -178,12 +178,12 @@ export function ProductDiscoveryCard({
               value={targetUser}
               onChange={(e) => setTargetUser(e.target.value)}
               placeholder="Contoh: Mahasiswa, anak kos, pemilik kos, pelanggan umum"
-              className="w-full bg-[#111213] border border-[#3c4043] focus:border-[#5a5d61] rounded-full px-4 py-2.5 text-xs sm:text-sm text-white placeholder-[#80868b] focus:outline-none transition"
+              className="w-full bg-[#0B0909] border border-[#241f1f] focus:border-[#408175]/60 rounded-full px-4 py-2.5 text-xs sm:text-sm text-white placeholder-[#80868b] focus:outline-none transition"
             />
           </div>
 
           {/* Question 4: Platform produk */}
-          <div className="space-y-2 pt-1 border-t border-[#26282a] pt-3.5">
+          <div className="space-y-2 pt-1 border-t border-[#241f1f] pt-3.5">
             <label className="text-xs font-medium text-[#e3e3e3] block">
               4. Platform produk
             </label>
@@ -199,12 +199,12 @@ export function ProductDiscoveryCard({
                     <div
                       className={`w-4 h-4 rounded-full border flex items-center justify-center transition ${
                         isSelected
-                          ? "border-white bg-transparent"
+                          ? "border-[#408175] bg-transparent"
                           : "border-[#5f6368] group-hover:border-[#9aa0a6]"
                       }`}
                     >
                       {isSelected && (
-                        <div className="w-2 h-2 rounded-full bg-white" />
+                        <div className="w-2 h-2 rounded-full bg-[#408175]" />
                       )}
                     </div>
                     <span>{opt}</span>
@@ -215,7 +215,7 @@ export function ProductDiscoveryCard({
           </div>
 
           {/* Question 5: Tahap pengembangan */}
-          <div className="space-y-2 pt-1 border-t border-[#26282a] pt-3.5">
+          <div className="space-y-2 pt-1 border-t border-[#241f1f] pt-3.5">
             <label className="text-xs font-medium text-[#e3e3e3] block">
               5. Tahap pengembangan
             </label>
@@ -231,12 +231,12 @@ export function ProductDiscoveryCard({
                     <div
                       className={`w-4 h-4 rounded-full border flex items-center justify-center transition ${
                         isSelected
-                          ? "border-white bg-transparent"
+                          ? "border-[#408175] bg-transparent"
                           : "border-[#5f6368] group-hover:border-[#9aa0a6]"
                       }`}
                     >
                       {isSelected && (
-                        <div className="w-2 h-2 rounded-full bg-white" />
+                        <div className="w-2 h-2 rounded-full bg-[#408175]" />
                       )}
                     </div>
                     <span>{opt}</span>
@@ -247,7 +247,7 @@ export function ProductDiscoveryCard({
           </div>
 
           {/* Question 6: Tech stack (opsional) */}
-          <div className="space-y-1.5 pt-1 border-t border-[#26282a] pt-3.5">
+          <div className="space-y-1.5 pt-1 border-t border-[#241f1f] pt-3.5">
             <label className="text-xs font-medium text-[#e3e3e3] block">
               6. Tech stack (opsional)
             </label>
@@ -256,7 +256,7 @@ export function ProductDiscoveryCard({
               value={techStack}
               onChange={(e) => setTechStack(e.target.value)}
               placeholder="Contoh: Laravel 12, React, atau biarkan kosong jika Anda non-IT"
-              className="w-full bg-[#111213] border border-[#3c4043] focus:border-[#5a5d61] rounded-full px-4 py-2.5 text-xs sm:text-sm text-white placeholder-[#80868b] focus:outline-none transition"
+              className="w-full bg-[#0B0909] border border-[#241f1f] focus:border-[#408175]/60 rounded-full px-4 py-2.5 text-xs sm:text-sm text-white placeholder-[#80868b] focus:outline-none transition"
             />
           </div>
 
@@ -265,9 +265,9 @@ export function ProductDiscoveryCard({
             <button
               type="submit"
               disabled={isLoading}
-              className="w-full py-2.5 sm:py-3 px-4 rounded-full bg-[#f1f3f4] hover:bg-white text-[#131314] font-semibold text-xs sm:text-sm flex items-center justify-center gap-2 transition cursor-pointer shadow-md active:scale-[0.99] disabled:opacity-50"
+              className="w-full py-2.5 sm:py-3 px-4 rounded-full bg-[#408175] hover:bg-[#4ea092] text-white font-semibold text-xs sm:text-sm flex items-center justify-center gap-2 transition cursor-pointer shadow-md shadow-[#408175]/20 active:scale-[0.99] disabled:opacity-50"
             >
-              <Sparkles className="w-4 h-4 text-[#131314]" />
+              <Sparkles className="w-4 h-4 text-white" />
               <span>{isLoading ? "Menghubungkan ke Engine..." : "Mulai Product Discovery"}</span>
             </button>
           </div>

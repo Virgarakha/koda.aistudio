@@ -15,7 +15,7 @@ export default function ExistingAppPlaygroundPage() {
   return (
     <Suspense
       fallback={
-        <div className="h-screen w-screen bg-[#131314] flex items-center justify-center text-xs text-[#80868b]">
+        <div className="h-screen w-screen bg-[#0B0909] flex items-center justify-center text-xs text-[#80868b]">
           Memuat aplikasi...
         </div>
       }

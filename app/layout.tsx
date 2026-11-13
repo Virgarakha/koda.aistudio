@@ -1,6 +1,6 @@
 import type { Metadata } from "next";
 import localFont from "next/font/local";
-import { Geist_Mono } from "next/font/google";
+import { Geist_Mono, Newsreader } from "next/font/google";
 import "./globals.css";
 import { TooltipProvider } from "@/components/ui/tooltip";
 
@@ -31,6 +31,12 @@ const satoshi = localFont({
   display: "swap",
 });
 
+const newsreader = Newsreader({
+  variable: "--font-serif",
+  subsets: ["latin"],
+  style: ["normal", "italic"],
+});
+
 const geistMono = Geist_Mono({
   variable: "--font-mono",
   subsets: ["latin"],
@@ -49,9 +55,9 @@ export default function RootLayout({
   return (
     <html
       lang="en"
-      className={`${satoshi.variable} ${geistMono.variable} dark h-full antialiased`}
+      className={`${satoshi.variable} ${newsreader.variable} ${geistMono.variable} dark h-full antialiased`}
     >
-      <body className="min-h-full flex flex-col bg-[#131314] text-[#f1f3f4] font-sans selection:bg-[#3c4043]">
+      <body className="min-h-full flex flex-col bg-[#0B0909] text-[#f1f3f4] font-sans selection:bg-[#408175]/30 selection:text-white">
         <TooltipProvider>{children}</TooltipProvider>
       </body>
     </html>

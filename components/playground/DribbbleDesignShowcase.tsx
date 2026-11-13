@@ -85,10 +85,10 @@ export function DribbbleDesignShowcase({ rawJson }: { rawJson: string }) {
         {data.designs.map((item, idx) => (
           <div
             key={idx}
-            className="group relative rounded-xl overflow-hidden border border-[#2e3032] bg-[#1a1b1d] transition-all duration-200 flex flex-col shadow-md"
+            className="group relative rounded-xl overflow-hidden border border-[#241f1f] bg-[#141111] transition-all duration-200 flex flex-col shadow-md"
           >
             {/* Image Preview Container with zoom hover */}
-            <div className="relative aspect-[16/10] overflow-hidden bg-[#0d0e0f]">
+            <div className="relative aspect-[16/10] overflow-hidden bg-[#0B0909]">
               <img
                 src={item.url}
                 alt={item.title}
@@ -145,12 +145,12 @@ export function DribbbleDesignShowcase({ rawJson }: { rawJson: string }) {
         >
           <div
             onClick={(e) => e.stopPropagation()}
-            className="relative max-w-5xl w-full bg-[#161719] border border-[#2e3032] rounded-2xl overflow-hidden shadow-2xl flex flex-col"
+            className="relative max-w-5xl w-full bg-[#0B0909] border border-[#241f1f] rounded-2xl overflow-hidden shadow-2xl flex flex-col"
           >
             {/* Modal Header */}
-            <div className="flex items-center justify-between px-5 py-3.5 bg-[#1b1c1e] border-b border-[#282a2c]">
+            <div className="flex items-center justify-between px-5 py-3.5 bg-[#141111] border-b border-[#241f1f]">
               <div className="flex items-center gap-2">
-                <span className="w-2 h-2 rounded-full bg-[#ea4c89]" />
+                <span className="w-2 h-2 rounded-full bg-[#408175]" />
                 <h4 className="font-semibold text-sm text-white">
                   {activeImage.title}
                 </h4>
@@ -166,16 +166,16 @@ export function DribbbleDesignShowcase({ rawJson }: { rawJson: string }) {
                     href={activeImage.source}
                     target="_blank"
                     rel="noopener noreferrer"
-                    className="px-2.5 py-1 text-xs text-[#c4c7c5] hover:text-white bg-[#25272a] hover:bg-[#2e3033] rounded-lg transition flex items-center gap-1.5 border border-[#3c4043]"
+                    className="px-2.5 py-1 text-xs text-[#c4c7c5] hover:text-white bg-[#141111] hover:bg-[#1a1616] rounded-lg transition flex items-center gap-1.5 border border-[#241f1f]"
                   >
-                    <ExternalLink className="w-3 h-3 text-[#ea4c89]" />
+                    <ExternalLink className="w-3 h-3 text-[#408175]" />
                     <span>Dribbble</span>
                   </a>
                 )}
                 <button
                   type="button"
                   onClick={() => setActiveImage(null)}
-                  className="p-1.5 text-[#9aa0a6] hover:text-white hover:bg-[#282a2c] rounded-lg transition"
+                  className="p-1.5 text-[#9aa0a6] hover:text-white hover:bg-[#1a1616] rounded-lg transition"
                 >
                   <X className="w-4 h-4" />
                 </button>
@@ -183,7 +183,7 @@ export function DribbbleDesignShowcase({ rawJson }: { rawJson: string }) {
             </div>
 
             {/* Large Image Preview */}
-            <div className="p-4 bg-[#0d0e0f] flex items-center justify-center max-h-[80vh] overflow-hidden">
+            <div className="p-4 bg-[#0B0909] flex items-center justify-center max-h-[80vh] overflow-hidden">
               <img
                 src={activeImage.url}
                 alt={activeImage.title}

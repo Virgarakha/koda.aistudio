@@ -125,6 +125,45 @@ export const CURATED_DRIBBLE_DESIGNS: Record<string, DribbbleDesignItem[]> = {
       tags: ["Fintech", "Wallet", "Banking"]
     }
   ],
+  travel: [
+    {
+      title: "Wanderlust - Travel Booking & Tour Mobile App",
+      author: "Ronas IT | UI/UX Team",
+      url: "https://cdn.dribbble.com/userupload/46803046/file/d68200f76f87a585dd93df5e3e53570f.png?resize=1200x900&vertical=center",
+      source: "https://dribbble.com/tags/travel-app",
+      tags: ["Travel", "Booking", "Tour"]
+    },
+    {
+      title: "AI Travel Assistant & Smart Tour Planner App UI",
+      author: "Odama Studio",
+      url: "https://cdn.dribbble.com/userupload/7265837/file/original-075fe36b14b580a2a961ebb2af612aa0.jpg?resize=1200x900&vertical=center",
+      source: "https://dribbble.com/tags/travel-assistant",
+      tags: ["AIAssistant", "Itinerary", "Chatbot"]
+    },
+    {
+      title: "Tour & Vacation Package Booking Dashboard",
+      author: "PixelDesign Lab",
+      url: "https://cdn.dribbble.com/userupload/46547586/file/c00b9f32defb7e4016d1a0bf8017fa4e.png?resize=1200x900&vertical=center",
+      source: "https://dribbble.com/tags/tour-booking",
+      tags: ["Dashboard", "Packages", "Reservation"]
+    }
+  ],
+  chatbot: [
+    {
+      title: "AI Conversational Assistant & Chatbot Interface",
+      author: "Odama Studio",
+      url: "https://cdn.dribbble.com/userupload/7265837/file/original-075fe36b14b580a2a961ebb2af612aa0.jpg?resize=1200x900&vertical=center",
+      source: "https://dribbble.com/tags/ai-chatbot",
+      tags: ["Chatbot", "Conversational", "AI"]
+    },
+    {
+      title: "Omnichannel Customer Support & Live Chat Dashboard",
+      author: "Ronas IT | UI/UX Team",
+      url: "https://cdn.dribbble.com/userupload/46803046/file/d68200f76f87a585dd93df5e3e53570f.png?resize=1200x900&vertical=center",
+      source: "https://dribbble.com/tags/customer-support",
+      tags: ["CustomerService", "LiveChat", "Support"]
+    }
+  ],
   default: [
     {
       title: "Modern SaaS Admin Dashboard & Analytics",
@@ -153,6 +192,27 @@ export const CURATED_DRIBBLE_DESIGNS: Record<string, DribbbleDesignItem[]> = {
 // Map Indonesian and application terms to best search keywords and curated fallbacks
 export function categorizeTopic(query: string): { category: string; searchTerms: string } {
   const q = (query || "").toLowerCase();
+
+  if (
+    q.includes("travel") ||
+    q.includes("tour") ||
+    q.includes("wisata") ||
+    q.includes("liburan") ||
+    q.includes("trip") ||
+    q.includes("itinerary")
+  ) {
+    return { category: "travel", searchTerms: "travel tour booking mobile app ui" };
+  }
+
+  if (
+    q.includes("chatbot") ||
+    q.includes("chat bot") ||
+    q.includes("bot wa") ||
+    q.includes("virtual assistant") ||
+    q.includes("ai assistant")
+  ) {
+    return { category: "chatbot", searchTerms: "ai chatbot conversational assistant mobile app" };
+  }
 
   if (
     q.includes("student") ||

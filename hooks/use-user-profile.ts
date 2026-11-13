@@ -8,7 +8,8 @@ export type SubscriptionTier = "FREE" | "PRO" | "MAX";
 
 export function useUserProfile() {
   const router = useRouter();
-  const [userEmail, setUserEmail] = useState<string>("virgakumara@gmail.com");
+  const [userName, setUserName] = useState<string>("");
+  const [userEmail, setUserEmail] = useState<string>("");
   const [userTier, setUserTier] = useState<SubscriptionTier>("FREE");
   const [avatarUrl, setAvatarUrl] = useState<string | null>(null);
   const [isLoading, setIsLoading] = useState(true);
@@ -24,6 +25,19 @@ export function useUserProfile() {
           if (data.user) {
             if (data.user.email) {
               setUserEmail(data.user.email);
+            }
+
+            // Extract Name from Google OAuth metadata (given_name / full_name / name)
+            const metaName =
+              data.user.user_metadata?.given_name ||
+              data.user.user_metadata?.full_name?.split(" ")[0] ||
+              data.user.user_metadata?.name?.split(" ")[0] ||
+              (data.user.email ? data.user.email.split("@")[0].split(/[._-]/)[0] : "");
+
+            if (metaName) {
+              const formattedName = metaName.charAt(0).toUpperCase() + metaName.slice(1);
+              setUserName(formattedName);
+              localStorage.setItem("koda_user_name", formattedName);
             }
 
             // Extract OAuth avatar (Google uses 'picture' or 'avatar_url', GitHub uses 'avatar_url')
@@ -56,9 +70,21 @@ export function useUserProfile() {
         }
 
         // Fallback / Demo mode
+        const savedName = localStorage.getItem("koda_user_name");
         const savedEmail = localStorage.getItem("koda_user_email");
+        if (savedName) {
+          setUserName(savedName);
+        } else if (savedEmail && savedEmail.includes("@")) {
+          const part = savedEmail.split("@")[0].split(/[._-]/)[0];
+          setUserName(part.charAt(0).toUpperCase() + part.slice(1));
+        } else {
+          setUserName("Virga");
+        }
+
         if (savedEmail) {
           setUserEmail(savedEmail);
+        } else {
+          setUserEmail("Tamu (Demo)");
         }
 
         const savedAvatar = localStorage.getItem("koda_user_avatar");
@@ -108,6 +134,7 @@ export function useUserProfile() {
         const supabase = createClient();
         await supabase.auth.signOut();
       }
+      localStorage.removeItem("koda_user_name");
       localStorage.removeItem("koda_user_email");
       localStorage.removeItem("koda_user_avatar");
     } catch (err) {
@@ -119,6 +146,7 @@ export function useUserProfile() {
   }, [router]);
 
   return {
+    userName,
     userEmail,
     userTier,
     avatarUrl,

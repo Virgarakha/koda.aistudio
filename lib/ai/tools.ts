@@ -15,7 +15,7 @@ export const AVAILABLE_AI_TOOLS: AiTool[] = [
     name: "AI PRD Builder & Flow",
     shortDesc: "Wawancara kebutuhan, petakan flow sistem & deteksi missing requirements",
     iconName: "FileSpreadsheet",
-    color: "#d97736",
+    color: "#408175",
     badge: "Core KODA",
     placeholder: "Deskripsikan ide aplikasi yang ingin Anda rancang (misal: booking tiket, POS kasir)...",
     systemPrompt: `Anda adalah KODA AI — Chief Requirements Architect & System Flow Engineer kelas dunia.
@@ -99,4 +99,93 @@ Anda membantu pengguna memahami fenomena fisika, menurunkan rumus matematis, men
     systemPrompt: `Anda adalah AI Astrophysicist & Cosmologist.
 Anda membantu pengguna memahami fenomena astronomi, mekanika orbit benda langit (Keplerian orbit), astrofotografi, bintang neutron, lubang hitam, dan data observatorium teleskop luar angkasa dengan akurat dan memukau.`,
   },
+  {
+    id: "data",
+    name: "Data & SQL Engine",
+    shortDesc: "Query, visualisasi data, analisis spreadsheet, dan rancangan dashboard bisnis",
+    iconName: "FileSpreadsheet",
+    color: "#34a853",
+    badge: "Anthropic",
+    placeholder: "Ketik query SQL, unggah spreadsheet CSV, atau minta analisis metriks bisnis...",
+    systemPrompt: `Anda adalah Chief Data Analyst & SQL Architect. Anda membantu merancang query SQL, skema analitik data, visualisasi metriks KPI, dan dashboard bisnis yang actionable.`,
+  },
+  {
+    id: "productivity",
+    name: "Productivity & Planner",
+    shortDesc: "Otomasi jadwal, manajemen task harian, dan perencanaan alur kerja efisien",
+    iconName: "FileText",
+    color: "#8ab4f8",
+    badge: "Essential",
+    placeholder: "Tuliskan rencana kegiatan mingguan atau task yang ingin diotomasi...",
+    systemPrompt: `Anda adalah Executive Productivity Architect. Anda membantu pengguna merancang sistem manajemen tugas yang fokus, menghilangkan distraksi, dan menyusun SOP harian yang efisien.`,
+  },
+  {
+    id: "sales",
+    name: "Sales & Pipeline Engine",
+    shortDesc: "Strategi prospek, email outreach dingin, kualifikasi deal, dan playbook penjualan",
+    iconName: "TrendingUp",
+    color: "#fbbc04",
+    badge: "Growth",
+    placeholder: "Jelaskan target prospek atau minta draft email outreach penjualan...",
+    systemPrompt: `Anda adalah VP of Sales & Growth Strategist. Anda membantu menyusun strategi penutupan deal B2B/B2C, kualifikasi prospek (BANT), dan template komunikasi penjualan persuasif.`,
+  },
+  {
+    id: "operations",
+    name: "Operations & SOP Builder",
+    shortDesc: "Dokumentasi SOP, manajemen vendor, optimasi alur kerja, dan checklist audit",
+    iconName: "CheckSquare",
+    color: "#ea4335",
+    badge: "Ops",
+    placeholder: "Jelaskan alur operasional bisnis yang ingin dibuatkan SOP standarnya...",
+    systemPrompt: `Anda adalah Operations Director & Process Engineer. Anda membantu menyusun SOP operasional yang jelas, checklist mitigasi risiko, dan tata kelola vendor bisnis.`,
+  },
+  {
+    id: "small_business",
+    name: "Small Business Workflows",
+    shortDesc: "Otomasi inventaris toko, pencatatan kas UMKM, dan alur operasional ritel",
+    iconName: "Store",
+    color: "#ff7043",
+    badge: "UMKM",
+    placeholder: "Tanyakan cara mengelola stok toko, kas harian, atau SOP pesanan pelanggan...",
+    systemPrompt: `Anda adalah Konsultan Bisnis & Ritel UMKM. Anda membantu pemilik toko kecil dan usaha rintisan mengelola stok, arus kas harian, dan kepuasan pelanggan secara praktis.`,
+  },
+  {
+    id: "human_resources",
+    name: "HR & Talent Assistant",
+    shortDesc: "Panduan wawancara kerja, deskripsi pekerjaan (JD), dan rubrik evaluasi kinerja tim",
+    iconName: "Users",
+    color: "#a142f4",
+    badge: "People",
+    placeholder: "Minta panduan pertanyaan wawancara atau draft job description untuk posisi tim...",
+    systemPrompt: `Anda adalah Senior HRBP & People Operations Partner. Anda membantu menyusun kriteria penilaian kandidat, proses onboarding karyawan baru, dan rubrik evaluasi performa kerja.`,
+  },
 ];
+
+export function getAiTool(id: string | null | undefined): AiTool | null {
+  if (!id) return null;
+  const cleanId = id.toLowerCase().trim();
+
+  // Alias mappings
+  if (
+    cleanId === "prd_builder" ||
+    cleanId === "product_management" ||
+    cleanId === "prd_architect"
+  ) {
+    return AVAILABLE_AI_TOOLS.find((t) => t.id === "prd_builder") || null;
+  }
+
+  const exact = AVAILABLE_AI_TOOLS.find((t) => t.id === cleanId);
+  if (exact) return exact;
+
+  // Fallback for connector / plugin / custom tool id
+  return {
+    id: cleanId,
+    name: cleanId.replace(/_/g, " ").replace(/\b\w/g, (c) => c.toUpperCase()),
+    shortDesc: `Spesialisasi AI terpandu untuk ${cleanId}`,
+    iconName: "Wrench",
+    color: "#408175",
+    badge: "Custom",
+    placeholder: `Tanyakan apa saja seputar ${cleanId}...`,
+    systemPrompt: `Anda adalah asisten AI spesialis untuk domain ${cleanId}.`,
+  };
+}

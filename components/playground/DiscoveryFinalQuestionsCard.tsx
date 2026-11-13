@@ -197,14 +197,14 @@ export function DiscoveryFinalQuestionsCard({
   };
 
   return (
-    <div className="my-6 rounded-2xl border border-[#2e3032] bg-[#141517] p-5 sm:p-7 shadow-xl space-y-6">
+    <div className="my-6 rounded-2xl border border-[#241f1f] bg-[#141111] p-5 sm:p-7 shadow-xl space-y-6">
       <form onSubmit={handleSubmit} className="space-y-6">
         {questions.map((q, idx) => {
           const val = answers[q.id];
 
           return (
             <div key={q.id} className="space-y-3">
-              {idx > 0 && <hr className="border-[#26282a] my-4" />}
+              {idx > 0 && <hr className="border-[#241f1f] my-4" />}
 
               {/* Title */}
               <div className="space-y-1">
@@ -234,12 +234,12 @@ export function DiscoveryFinalQuestionsCard({
                         <div
                           className={`w-4 h-4 rounded-full border shrink-0 mt-0.5 flex items-center justify-center transition ${
                             isSelected
-                              ? "border-white bg-transparent"
+                              ? "border-[#408175] bg-transparent"
                               : "border-[#5f6368] group-hover:border-[#9aa0a6]"
                           }`}
                         >
                           {isSelected && (
-                            <div className="w-2 h-2 rounded-full bg-white" />
+                            <div className="w-2 h-2 rounded-full bg-[#408175]" />
                           )}
                         </div>
                         <span className="leading-snug">{labelText}</span>
@@ -266,13 +266,13 @@ export function DiscoveryFinalQuestionsCard({
                         <div
                           className={`w-4 h-4 rounded mt-0.5 shrink-0 flex items-center justify-center border transition ${
                             isChecked
-                              ? "bg-white border-white text-black"
+                              ? "bg-[#408175] border-[#408175] text-white"
                               : "border-[#5f6368] group-hover:border-[#9aa0a6] bg-transparent"
                           }`}
                         >
                           {isChecked && (
                             <svg
-                              className="w-3 h-3 text-black stroke-[3]"
+                              className="w-3 h-3 text-white stroke-[3]"
                               fill="none"
                               viewBox="0 0 24 24"
                               stroke="currentColor"
@@ -312,9 +312,9 @@ export function DiscoveryFinalQuestionsCard({
         <div className="pt-4">
           <button
             type="submit"
-            className="w-full py-3 px-4 rounded-full bg-[#f1f3f4] hover:bg-white text-[#131314] font-semibold text-xs sm:text-sm flex items-center justify-center gap-2 transition cursor-pointer shadow-md active:scale-[0.99]"
+            className="w-full py-3 px-4 rounded-full bg-[#408175] hover:bg-[#4ea092] text-white font-semibold text-xs sm:text-sm flex items-center justify-center gap-2 transition cursor-pointer shadow-md shadow-[#408175]/20 active:scale-[0.99]"
           >
-            <FileText className="w-4 h-4 text-[#131314]" />
+            <FileText className="w-4 h-4 text-white" />
             <span>{buttonText}</span>
           </button>
         </div>

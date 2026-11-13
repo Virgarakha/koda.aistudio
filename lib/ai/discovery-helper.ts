@@ -1,5 +1,12 @@
 import { BOOKING_KOS_PRD_DOCUMENT } from "./booking-kos-prd";
 import { generateDynamicPrdDocument } from "./dynamic-prd";
+import {
+  DesignStyle,
+  DESIGN_STYLES,
+  detectChosenDesignStyle,
+  generateDesignSelectionResponse,
+  injectDesignStyleToPrd,
+} from "./design-styles";
 
 export interface DiscoveryContext {
   idea: string;
@@ -634,7 +641,7 @@ export function getDiscoveryStage2AnswerResponse(ctx: DiscoveryContext): {
 }
 \`\`\`
 
-Setelah keputusan ini dikirim, aku akan langsung menyusun dokumen PRD lengkap 13 bagian standar industri beserta tombol download PRD (.md) di akhir.`;
+Setelah keputusan ini dikirim, aku akan memvalidasi kesiapan spesifikasi PRD dan menampilkan pilihan style design serta color palette sebelum dokumen PRD lengkap dikompilasi.`;
     return { thought, content };
   }
 
@@ -740,22 +747,40 @@ Setelah keputusan ini dikirim, aku akan langsung menyusun dokumen PRD lengkap 13
 }
 \`\`\`
 
-Setelah keputusan ini dikirim, aku akan langsung menyusun dokumen PRD lengkap 13 bagian standar industri beserta tombol download PRD (.md) di akhir.`;
+Setelah keputusan ini dikirim, aku akan memvalidasi kesiapan spesifikasi PRD dan menampilkan pilihan style design serta color palette sebelum dokumen PRD lengkap dikompilasi.`;
 
   return { thought, content };
 }
 
-export function getDiscoveryFinalAnswerResponse(ctx: DiscoveryContext): {
+export function getDiscoveryReadyForDesignResponse(
+  ctx: DiscoveryContext,
+  dribbbleDesigns: any[] = []
+): {
+  thought: string;
+  content: string;
+} {
+  return generateDesignSelectionResponse(ctx.idea, ctx.target, dribbbleDesigns);
+}
+
+export function getDiscoveryFinalAnswerResponse(
+  ctx: DiscoveryContext,
+  chosenStyle?: DesignStyle | null
+): {
   thought: string;
   content: string;
 } {
   const { idea, target, tech, platform, stage, userBg, isKos } = ctx;
 
-  const thought = `KODA AI Requirement Engine menyusun Dokumen PRD Lengkap (13 Bagian) untuk "${idea}" sesuai format standar industri.`;
+  const styleToUse = chosenStyle || DESIGN_STYLES.A;
 
-  const prdMarkdown = isKos
+  const thought = `KODA AI Requirement Engine menyusun Dokumen PRD Lengkap (13 Bagian) untuk "${idea}" dengan Style Desain "${styleToUse.name}".`;
+
+  let prdMarkdown = isKos
     ? BOOKING_KOS_PRD_DOCUMENT
     : generateDynamicPrdDocument({ idea, target, tech, platform, stage, userBg });
+
+  // Inject chosen design style and tokens into PRD
+  prdMarkdown = injectDesignStyleToPrd(prdMarkdown, styleToUse);
 
   const content = `${prdMarkdown}
 
@@ -763,7 +788,7 @@ export function getDiscoveryFinalAnswerResponse(ctx: DiscoveryContext): {
 {
   "title": "Spesifikasi PRD Memenuhi Standar Industri",
   "appName": "${idea}",
-  "summary": "Seluruh 13 bagian PRD ${idea}, diagram alur sistem, skema database relasional, dan backlog MVP telah tuntas terverifikasi.",
+  "summary": "Seluruh 13 bagian PRD ${idea}, alur sistem, skema database relasional, dan design system (${styleToUse.name}) telah tuntas terverifikasi.",
   "buttonText": "Download PRD (.md)"
 }
 \`\`\``;
