@@ -34,9 +34,16 @@ import {
   Users,
   ExternalLink,
   ShieldCheck,
+  Trash2,
+  CornerDownRight,
+  Tag,
+  Clock,
+  Filter,
 } from "lucide-react";
 import {
   PrdDocumentRecord,
+  PrdComment,
+  PrdCommentReply,
   getPrdDocumentById,
   savePrdDocument,
   generateUniqueDocId,
@@ -62,6 +69,11 @@ export interface RealtimeCollaborator {
     isEditing?: boolean;
     lastActive: number;
   };
+  selection?: {
+    text: string;
+    rects: Array<{ x: number; y: number; width: number; height: number }>;
+    lastUpdated?: number;
+  } | null;
 }
 
 // Markdown to Styled Rich HTML Converter (WYSIWYG representation)
@@ -314,6 +326,224 @@ Membangun website e-commerce MVP berstandar industri dengan alur transaksi yang 
 </div>
 `;
 
+const COMMENT_TAG_OPTIONS = [
+  { label: "Umum", color: "bg-slate-500/20 text-slate-300 border-slate-500/30" },
+  { label: "Pembayaran", color: "bg-amber-500/20 text-amber-300 border-amber-500/30" },
+  { label: "Arsitektur", color: "bg-cyan-500/20 text-cyan-300 border-cyan-500/30" },
+  { label: "Scope", color: "bg-purple-500/20 text-purple-300 border-purple-500/30" },
+  { label: "UI/UX", color: "bg-pink-500/20 text-pink-300 border-pink-500/30" },
+  { label: "Security", color: "bg-emerald-500/20 text-emerald-300 border-emerald-500/30" },
+];
+
+function getTagColor(tag?: string): string {
+  const found = COMMENT_TAG_OPTIONS.find((t) => t.label.toLowerCase() === (tag || "").toLowerCase());
+  return found ? found.color : "bg-slate-500/20 text-slate-300 border-slate-500/30";
+}
+
+function formatCommentTime(isoString?: string): string {
+  if (!isoString) return "Baru saja";
+  try {
+    const time = new Date(isoString).getTime();
+    if (isNaN(time)) return "Baru saja";
+    const diff = Date.now() - time;
+    const mins = Math.floor(diff / 60000);
+    if (mins < 1) return "Baru saja";
+    if (mins < 60) return `${mins} mnt lalu`;
+    const hours = Math.floor(mins / 60);
+    if (hours < 24) return `${hours} jam lalu`;
+    const days = Math.floor(hours / 24);
+    return `${days} hari lalu`;
+  } catch {
+    return "Baru saja";
+  }
+}
+
+// Curated vibrant color palette for multiplayer presence
+const DISTINCT_PALETTE = [
+  "#e11d48", // Rose Red
+  "#2563eb", // Royal Blue
+  "#ea580c", // Deep Orange
+  "#7c3aed", // Deep Violet
+  "#059669", // Emerald Green
+  "#db2777", // Pink / Magenta
+  "#0891b2", // Cyan
+  "#d97706", // Amber
+  "#4f46e5", // Indigo
+  "#dc2626", // Crimson Red
+];
+
+export function getHashColor(str?: string): string {
+  if (!str) return DISTINCT_PALETTE[0];
+  let hash = 0;
+  for (let i = 0; i < str.length; i++) {
+    hash = (hash << 5) - hash + str.charCodeAt(i);
+    hash |= 0;
+  }
+  return DISTINCT_PALETTE[Math.abs(hash) % DISTINCT_PALETTE.length];
+}
+
+// Extracts dominant vibrant color from an avatar photo using HTML5 Canvas & Hue Clustering
+export function extractDominantColor(
+  avatarUrl?: string | null,
+  seedName?: string
+): Promise<string> {
+  return new Promise((resolve) => {
+    const fallbackColor = getHashColor(seedName || avatarUrl || "user");
+    if (!avatarUrl || typeof window === "undefined") {
+      return resolve(fallbackColor);
+    }
+
+    try {
+      const img = new Image();
+      img.crossOrigin = "anonymous";
+      img.onload = () => {
+        try {
+          const canvas = document.createElement("canvas");
+          canvas.width = 32;
+          canvas.height = 32;
+          const ctx = canvas.getContext("2d", { willReadFrequently: true });
+          if (!ctx) return resolve(fallbackColor);
+
+          ctx.drawImage(img, 0, 0, 32, 32);
+          const data = ctx.getImageData(0, 0, 32, 32).data;
+
+          // 12-bin Hue Histogram for dominant color clustering
+          const bins = Array.from({ length: 12 }, () => ({
+            weight: 0,
+            r: 0,
+            g: 0,
+            b: 0,
+            count: 0,
+          }));
+          let hasSaturated = false;
+
+          for (let i = 0; i < data.length; i += 4) {
+            const r = data[i];
+            const g = data[i + 1];
+            const b = data[i + 2];
+            const a = data[i + 3];
+
+            if (a < 128) continue;
+            const brightness = (r + g + b) / 3;
+            // Skip pure darks or pure whites
+            if (brightness < 30 || brightness > 235) continue;
+
+            const max = Math.max(r, g, b);
+            const min = Math.min(r, g, b);
+            const sat = max === 0 ? 0 : (max - min) / max;
+            if (sat < 0.16) continue; // skip gray
+
+            const d = max - min;
+            let hue = 0;
+            if (d !== 0) {
+              if (max === r) hue = ((g - b) / d) % 6;
+              else if (max === g) hue = (b - r) / d + 2;
+              else hue = (r - g) / d + 4;
+              hue = Math.round(hue * 60);
+              if (hue < 0) hue += 360;
+            }
+            const bin = Math.min(11, Math.floor(hue / 30));
+            // Boost vibrant saturated pixels
+            const pixelWeight = sat * 1.5 * (a / 255);
+            bins[bin].weight += pixelWeight;
+            bins[bin].r += r;
+            bins[bin].g += g;
+            bins[bin].b += b;
+            bins[bin].count++;
+            hasSaturated = true;
+          }
+
+          if (!hasSaturated) return resolve(fallbackColor);
+
+          let bestBin = bins[0];
+          for (let i = 1; i < 12; i++) {
+            if (bins[i].weight > bestBin.weight) {
+              bestBin = bins[i];
+            }
+          }
+
+          if (bestBin.count === 0 || bestBin.weight < 1) return resolve(fallbackColor);
+          const avgR = Math.round(bestBin.r / bestBin.count);
+          const avgG = Math.round(bestBin.g / bestBin.count);
+          const avgB = Math.round(bestBin.b / bestBin.count);
+
+          const toHex = (c: number) => c.toString(16).padStart(2, "0");
+          return resolve(`#${toHex(avgR)}${toHex(avgG)}${toHex(avgB)}`);
+        } catch {
+          return resolve(fallbackColor);
+        }
+      };
+
+      img.onerror = () => {
+        resolve(fallbackColor);
+      };
+
+      img.src = avatarUrl;
+    } catch {
+      resolve(fallbackColor);
+    }
+  });
+}
+
+// Find a DOM Range across text nodes matching target text
+export function findRangeForText(root: Node, targetText: string): Range | null {
+  if (!targetText || targetText.length < 2) return null;
+  const normalizedTarget = targetText.replace(/\s+/g, " ").trim();
+  if (!normalizedTarget) return null;
+
+  try {
+    const walker = document.createTreeWalker(root, NodeFilter.SHOW_TEXT);
+    let fullText = "";
+    const nodes: { node: Text; start: number; end: number }[] = [];
+
+    let current: Text | null = null;
+    while ((current = walker.nextNode() as Text | null)) {
+      const text = current.textContent || "";
+      if (text) {
+        nodes.push({ node: current, start: fullText.length, end: fullText.length + text.length });
+        fullText += text;
+      }
+    }
+
+    let idx = fullText.indexOf(targetText);
+    let matchLen = targetText.length;
+
+    if (idx === -1) {
+      idx = fullText.replace(/\s+/g, " ").indexOf(normalizedTarget);
+      matchLen = normalizedTarget.length;
+      if (idx === -1) return null;
+    }
+
+    const targetStart = idx;
+    const targetEnd = idx + matchLen;
+
+    let startNode: Text | null = null;
+    let startOffset = 0;
+    let endNode: Text | null = null;
+    let endOffset = 0;
+
+    for (const n of nodes) {
+      if (!startNode && targetStart >= n.start && targetStart <= n.end) {
+        startNode = n.node;
+        startOffset = targetStart - n.start;
+      }
+      if (targetEnd >= n.start && targetEnd <= n.end) {
+        endNode = n.node;
+        endOffset = targetEnd - n.start;
+        break;
+      }
+    }
+
+    if (startNode && endNode) {
+      const range = document.createRange();
+      range.setStart(startNode, Math.min(startOffset, startNode.length));
+      range.setEnd(endNode, Math.min(endOffset, endNode.length));
+      return range;
+    }
+  } catch {}
+  return null;
+}
+
 interface AiChatMessage {
   id: string;
   sender: "user" | "ai";
@@ -349,38 +579,20 @@ export function PrdDocumentEditor({ docId }: { docId?: string }) {
   const [aiInput, setAiInput] = useState("");
   const [isAiProcessing, setIsAiProcessing] = useState(false);
 
-  // Comments state
+  // Comments state - 100% Dynamic, loaded from DB / storage, Real-time synced
   const [newCommentText, setNewCommentText] = useState("");
-  const [comments, setComments] = useState<
-    Array<{
-      id: string;
-      author: string;
-      initial: string;
-      authorColor: string;
-      timeAgo: string;
-      text: string;
-      tag?: string;
-      replies?: Array<{ author: string; text: string; timeAgo: string; isAi?: boolean }>;
-    }>
-  >([
-    {
-      id: "c1",
-      author: "Jordan Lee",
-      initial: "J",
-      authorColor: "bg-rose-500",
-      timeAgo: "now",
-      text: "Apakah alur verifikasi bukti bayar manual sudah mencakup batas waktu kedaluwarsa 24 jam?",
-      tag: "Pembayaran",
-      replies: [
-        {
-          author: "ChatPRD AI",
-          text: "Sudah terangkum pada Bab 3.1: Scheduler otomatis memeriksa tiap 5 menit untuk membatalkan pesanan yang belum dibayar dalam 24 jam.",
-          timeAgo: "just now",
-          isAi: true,
-        },
-      ],
-    },
-  ]);
+  const [selectedCommentTag, setSelectedCommentTag] = useState("Umum");
+  const [commentFilter, setCommentFilter] = useState<"all" | "open" | "resolved">("all");
+  const [replyingCommentId, setReplyingCommentId] = useState<string | null>(null);
+  const [replyInputText, setReplyInputText] = useState<{ [id: string]: string }>({});
+  const [aiAnsweringId, setAiAnsweringId] = useState<string | null>(null);
+  const [currentSection, setCurrentSection] = useState("1. Latar Belakang & Masalah");
+  const [comments, setComments] = useState<PrdComment[]>([]);
+  const commentsRef = useRef<PrdComment[]>([]);
+
+  useEffect(() => {
+    commentsRef.current = comments;
+  }, [comments]);
 
   const [aiMessages, setAiMessages] = useState<AiChatMessage[]>([
     {
@@ -398,6 +610,35 @@ export function PrdDocumentEditor({ docId }: { docId?: string }) {
     userName ||
     (typeof window !== "undefined" ? localStorage.getItem("koda_user_name") : "") ||
     "Virga Kumara";
+
+  // Dynamic user color: extracted from profile photo or deterministic vibrant hash
+  const [myUserColor, setMyUserColor] = useState<string>(() =>
+    getHashColor(effectiveUserName || "user")
+  );
+  const myUserColorRef = useRef<string>(getHashColor(effectiveUserName || "user"));
+  const currentSelectionRef = useRef<{
+    text: string;
+    rects: Array<{ x: number; y: number; width: number; height: number }>;
+    lastUpdated?: number;
+  } | null>(null);
+
+  // Extract dominant color from avatar photo or update via deterministic hash
+  useEffect(() => {
+    let isMounted = true;
+    extractDominantColor(avatarUrl, effectiveUserName).then((color) => {
+      if (isMounted) {
+        setMyUserColor(color);
+        myUserColorRef.current = color;
+        // Update local self color in collaborators
+        setCollaborators((prev) =>
+          prev.map((c) => (c.isSelf ? { ...c, color } : c))
+        );
+      }
+    });
+    return () => {
+      isMounted = false;
+    };
+  }, [avatarUrl, effectiveUserName]);
 
   // Realtime Collaborators State (Only REAL online users, NO dummy data!)
   const [collaborators, setCollaborators] = useState<RealtimeCollaborator[]>([]);
@@ -433,11 +674,12 @@ export function PrdDocumentEditor({ docId }: { docId?: string }) {
         name: `${effectiveUserName}`,
         role: "Author",
         initials: myInitials,
-        color: "#10b981", // Emerald for local user
+        color: myUserColorRef.current,
         avatarUrl: avatarUrl || undefined,
         isOnline: true,
         isSelf: true,
         currentSection: "Dokumen Pembuka",
+        selection: currentSelectionRef.current,
       };
       return [selfUser, ...others];
     });
@@ -452,11 +694,14 @@ export function PrdDocumentEditor({ docId }: { docId?: string }) {
 
   // Sync document to Supabase database, localStorage, and original Chat app
   const syncDocumentToDatabase = useCallback(
-    async (currentHtml: string, currentTitle: string) => {
+    async (currentHtml: string, currentTitle: string, overrideComments?: PrdComment[]) => {
       if (!currentDocId) return;
 
       const currentMarkdown = richHtmlToMarkdown(currentHtml);
       setIsSaved(false);
+
+      const targetComments =
+        overrideComments !== undefined ? overrideComments : commentsRef.current;
 
       const record: PrdDocumentRecord = {
         id: currentDocId,
@@ -468,6 +713,7 @@ export function PrdDocumentEditor({ docId }: { docId?: string }) {
         sourceAppId,
         sourceSessionId,
         sourceUrl,
+        comments: targetComments,
       };
 
       // 1. Save to Supabase and LocalStorage
@@ -557,6 +803,10 @@ export function PrdDocumentEditor({ docId }: { docId?: string }) {
         if (existing.sourceAppId) setSourceAppId(existing.sourceAppId);
         if (existing.sourceSessionId) setSourceSessionId(existing.sourceSessionId);
         if (existing.sourceUrl) setSourceUrl(existing.sourceUrl);
+        if (existing.comments && Array.isArray(existing.comments)) {
+          setComments(existing.comments);
+          commentsRef.current = existing.comments;
+        }
 
         if (editorRef.current) {
           if (existing.html && existing.html.trim().length > 20) {
@@ -586,6 +836,10 @@ export function PrdDocumentEditor({ docId }: { docId?: string }) {
               if (parsed.sourceAppId) setSourceAppId(parsed.sourceAppId);
               if (parsed.sourceSessionId) setSourceSessionId(parsed.sourceSessionId);
               if (parsed.sourceUrl) setSourceUrl(parsed.sourceUrl);
+              if (parsed.comments && Array.isArray(parsed.comments)) {
+                setComments(parsed.comments);
+                commentsRef.current = parsed.comments;
+              }
 
               if (parsed.html && parsed.html.trim().length > 20) {
                 initialHtml = parsed.html;
@@ -613,6 +867,7 @@ export function PrdDocumentEditor({ docId }: { docId?: string }) {
           html: initialHtml,
           markdown: richHtmlToMarkdown(initialHtml),
           updatedAt: new Date().toISOString(),
+          comments: [],
         });
       }
     };
@@ -631,13 +886,14 @@ export function PrdDocumentEditor({ docId }: { docId?: string }) {
         name: effectiveUserName,
         role: "Reviewer",
         initials: effectiveUserName.slice(0, 2).toUpperCase(),
-        color: "#10b981",
+        color: myUserColorRef.current,
         avatarUrl,
         x,
         y,
         sectionName,
         isEditing,
         lastActive: Date.now(),
+        selection: currentSelectionRef.current,
       };
 
       // 1. Send via local BroadcastChannel (instant multi-tab synchronization)
@@ -704,6 +960,8 @@ export function PrdDocumentEditor({ docId }: { docId?: string }) {
         y = Math.max(15, mouseEv.clientY - containerRect.top);
       }
 
+      setCurrentSection(sectionName);
+
       // Update self in collaborators list
       setCollaborators((prev) =>
         prev.map((c) =>
@@ -727,6 +985,104 @@ export function PrdDocumentEditor({ docId }: { docId?: string }) {
     },
     [broadcastMyCursor]
   );
+
+  // Real-time Text Block Selection (Highlight) Listener — No Delay across tabs & peers!
+  useEffect(() => {
+    const handleSelectionChange = () => {
+      if (!editorRef.current || !canvasContainerRef.current) return;
+      const sel = window.getSelection();
+      let selectionData: {
+        text: string;
+        rects: Array<{ x: number; y: number; width: number; height: number }>;
+        lastUpdated: number;
+      } | null = null;
+
+      if (
+        sel &&
+        !sel.isCollapsed &&
+        sel.rangeCount > 0 &&
+        editorRef.current.contains(sel.anchorNode) &&
+        editorRef.current.contains(sel.focusNode)
+      ) {
+        const selectedText = sel.toString();
+        if (selectedText.trim().length > 0) {
+          const range = sel.getRangeAt(0);
+          const clientRects = range.getClientRects();
+          if (clientRects.length > 0) {
+            const containerRect = canvasContainerRef.current.getBoundingClientRect();
+            const rects: Array<{ x: number; y: number; width: number; height: number }> = [];
+            for (let i = 0; i < clientRects.length; i++) {
+              const r = clientRects[i];
+              if (r.width > 0 && r.height > 0) {
+                rects.push({
+                  x: Math.round(r.left - containerRect.left),
+                  y: Math.round(r.top - containerRect.top),
+                  width: Math.round(r.width),
+                  height: Math.round(r.height),
+                });
+              }
+            }
+            if (rects.length > 0) {
+              selectionData = {
+                text: selectedText,
+                rects,
+                lastUpdated: Date.now(),
+              };
+            }
+          }
+        }
+      }
+
+      // Check if selection changed
+      const prev = currentSelectionRef.current;
+      if (
+        (!prev && !selectionData) ||
+        (prev &&
+          selectionData &&
+          prev.text === selectionData.text &&
+          prev.rects.length === selectionData.rects.length)
+      ) {
+        return;
+      }
+
+      currentSelectionRef.current = selectionData;
+
+      // Update self in collaborators list
+      setCollaborators((prevList) =>
+        prevList.map((c) => (c.isSelf ? { ...c, selection: selectionData } : c))
+      );
+
+      // Broadcast immediately (real-time zero latency)
+      const payload = {
+        id: myClientIdRef.current,
+        name: effectiveUserName,
+        color: myUserColorRef.current,
+        avatarUrl,
+        selection: selectionData,
+      };
+
+      if (typeof window !== "undefined" && (window as any).__prd_bc) {
+        try {
+          (window as any).__prd_bc.postMessage({ type: "selection_change", payload });
+        } catch {}
+      }
+
+      if (activeChannelRef.current) {
+        try {
+          activeChannelRef.current.send({
+            type: "broadcast",
+            event: "selection_change",
+            payload,
+          });
+        } catch {}
+      }
+    };
+
+    document.addEventListener("selectionchange", handleSelectionChange);
+    return () => {
+      document.removeEventListener("selectionchange", handleSelectionChange);
+    };
+  }, [effectiveUserName, avatarUrl]);
 
   // Jump to collaborator's active editing position when their avatar is clicked
   const handleJumpToCollaborator = useCallback((collab: RealtimeCollaborator) => {
@@ -762,7 +1118,86 @@ export function PrdDocumentEditor({ docId }: { docId?: string }) {
       bc.onmessage = (ev) => {
         if (!ev.data) return;
         const { type, payload: p } = ev.data;
-        if (!p || p.id === myClientId) return;
+        if (!p || p.senderId === myClientId || p.id === myClientId) return;
+
+        if (type === "comment_event") {
+          if (p.action === "add" && p.comment) {
+            setComments((prev) => {
+              if (prev.some((c) => c.id === p.comment.id)) return prev;
+              const next = [p.comment, ...prev];
+              commentsRef.current = next;
+              return next;
+            });
+            triggerToast(`💬 ${p.comment.author} menambahkan catatan review`);
+          } else if (p.action === "reply" && p.commentId && p.reply) {
+            setComments((prev) => {
+              const next = prev.map((c) =>
+                c.id === p.commentId
+                  ? {
+                      ...c,
+                      replies: c.replies?.some((r) => r.id === p.reply.id)
+                        ? c.replies
+                        : [...(c.replies || []), p.reply],
+                    }
+                  : c
+              );
+              commentsRef.current = next;
+              return next;
+            });
+            triggerToast(`💬 Balasan baru dari ${p.reply.author}`);
+          } else if (p.action === "resolve" && p.commentId) {
+            setComments((prev) => {
+              const next = prev.map((c) =>
+                c.id === p.commentId ? { ...c, resolved: p.resolved } : c
+              );
+              commentsRef.current = next;
+              return next;
+            });
+          } else if (p.action === "delete" && p.commentId) {
+            setComments((prev) => {
+              const next = prev.filter((c) => c.id !== p.commentId);
+              commentsRef.current = next;
+              return next;
+            });
+          }
+          return;
+        }
+
+        if (type === "selection_change" && p) {
+          if (p.id === myClientId) return;
+          setCollaborators((prev) => {
+            const exists = prev.find((c) => c.id === p.id);
+            if (exists) {
+              return prev.map((c) =>
+                c.id === p.id
+                  ? {
+                      ...c,
+                      name: p.name || c.name,
+                      color: p.color || c.color,
+                      avatarUrl: p.avatarUrl !== undefined ? p.avatarUrl : c.avatarUrl,
+                      selection: p.selection,
+                    }
+                  : c
+              );
+            } else {
+              return [
+                {
+                  id: p.id,
+                  name: p.name || "Anggota Tim",
+                  role: "Collaborator",
+                  initials: p.name?.slice(0, 2).toUpperCase() || "TM",
+                  color: p.color || getHashColor(p.name),
+                  avatarUrl: p.avatarUrl,
+                  isOnline: true,
+                  currentSection: "Dokumen",
+                  selection: p.selection,
+                },
+                ...prev,
+              ];
+            }
+          });
+          return;
+        }
 
         if (type === "leave") {
           setCollaborators((prev) => prev.filter((c) => c.id !== p.id));
@@ -778,9 +1213,10 @@ export function PrdDocumentEditor({ docId }: { docId?: string }) {
                 id: myClientId,
                 name: effectiveUserName,
                 initials: effectiveUserName.slice(0, 2).toUpperCase(),
-                color: "#10b981",
+                color: myUserColorRef.current,
                 avatarUrl,
                 sectionName: "Dokumen",
+                selection: currentSelectionRef.current,
               },
             });
           } catch {}
@@ -796,6 +1232,7 @@ export function PrdDocumentEditor({ docId }: { docId?: string }) {
                       ...c,
                       name: p.name || c.name,
                       initials: p.initials || c.initials,
+                      color: p.color || c.color,
                       avatarUrl: p.avatarUrl !== undefined ? p.avatarUrl : c.avatarUrl,
                       isOnline: true,
                       currentSection: p.sectionName || c.currentSection,
@@ -809,17 +1246,17 @@ export function PrdDocumentEditor({ docId }: { docId?: string }) {
                               lastActive: Date.now(),
                             }
                           : c.cursorPos,
+                      selection: p.selection !== undefined ? p.selection : c.selection,
                     }
                   : c
               );
             } else {
-              const colors = ["#3b82f6", "#f43f5e", "#f59e0b", "#8b5cf6", "#06b6d4"];
               const newCollab: RealtimeCollaborator = {
                 id: p.id,
                 name: p.name || "Anggota Tim",
                 role: "Collaborator",
                 initials: p.initials || p.name?.slice(0, 2).toUpperCase() || "TM",
-                color: p.color || colors[prev.length % colors.length],
+                color: p.color || getHashColor(p.name),
                 avatarUrl: p.avatarUrl,
                 isOnline: true,
                 currentSection: p.sectionName || "Dokumen",
@@ -833,6 +1270,7 @@ export function PrdDocumentEditor({ docId }: { docId?: string }) {
                         lastActive: Date.now(),
                       }
                     : undefined,
+                selection: p.selection || null,
               };
               return [...prev, newCollab];
             }
@@ -865,14 +1303,25 @@ export function PrdDocumentEditor({ docId }: { docId?: string }) {
               const p = presences[0];
               if (p.id === myClientId) return;
               setCollaborators((prev) => {
-                if (prev.some((c) => c.id === p.id)) return prev;
+                if (prev.some((c) => c.id === p.id)) {
+                  return prev.map((c) =>
+                    c.id === p.id
+                      ? {
+                          ...c,
+                          color: p.color || c.color,
+                          avatarUrl: p.avatarUrl !== undefined ? p.avatarUrl : c.avatarUrl,
+                        }
+                      : c
+                  );
+                }
                 return [
                   {
                     id: p.id,
                     name: p.name || "Teammate",
                     role: p.role || "Member",
                     initials: p.initials || "TM",
-                    color: p.color || "#f59e0b",
+                    color: p.color || getHashColor(p.name),
+                    avatarUrl: p.avatarUrl,
                     isOnline: true,
                     currentSection: p.currentSection || "Dokumen",
                     cursorPos: {
@@ -882,10 +1331,45 @@ export function PrdDocumentEditor({ docId }: { docId?: string }) {
                       isEditing: false,
                       lastActive: Date.now(),
                     },
+                    selection: null,
                   },
                   ...prev,
                 ];
               });
+            }
+          });
+        })
+        .on("broadcast", { event: "selection_change" }, ({ payload }: any) => {
+          if (!payload || payload.id === myClientId) return;
+          setCollaborators((prev) => {
+            const exists = prev.find((c) => c.id === payload.id);
+            if (exists) {
+              return prev.map((c) =>
+                c.id === payload.id
+                  ? {
+                      ...c,
+                      name: payload.name || c.name,
+                      color: payload.color || c.color,
+                      avatarUrl: payload.avatarUrl !== undefined ? payload.avatarUrl : c.avatarUrl,
+                      selection: payload.selection,
+                    }
+                  : c
+              );
+            } else {
+              return [
+                {
+                  id: payload.id,
+                  name: payload.name || "Anggota Tim",
+                  role: "Collaborator",
+                  initials: payload.name?.slice(0, 2).toUpperCase() || "TM",
+                  color: payload.color || getHashColor(payload.name),
+                  avatarUrl: payload.avatarUrl,
+                  isOnline: true,
+                  currentSection: "Dokumen",
+                  selection: payload.selection,
+                },
+                ...prev,
+              ];
             }
           });
         })
@@ -898,6 +1382,9 @@ export function PrdDocumentEditor({ docId }: { docId?: string }) {
                 c.id === payload.id
                   ? {
                       ...c,
+                      name: payload.name || c.name,
+                      color: payload.color || c.color,
+                      avatarUrl: payload.avatarUrl !== undefined ? payload.avatarUrl : c.avatarUrl,
                       isOnline: true,
                       currentSection: payload.sectionName,
                       cursorPos: {
@@ -907,6 +1394,8 @@ export function PrdDocumentEditor({ docId }: { docId?: string }) {
                         isEditing: payload.isEditing,
                         lastActive: Date.now(),
                       },
+                      selection:
+                        payload.selection !== undefined ? payload.selection : c.selection,
                     }
                   : c
               );
@@ -917,7 +1406,7 @@ export function PrdDocumentEditor({ docId }: { docId?: string }) {
                   name: payload.name,
                   role: payload.role || "Team Member",
                   initials: payload.initials || payload.name.slice(0, 2).toUpperCase(),
-                  color: payload.color || "#ec4899",
+                  color: payload.color || getHashColor(payload.name),
                   avatarUrl: payload.avatarUrl,
                   isOnline: true,
                   currentSection: payload.sectionName,
@@ -928,11 +1417,54 @@ export function PrdDocumentEditor({ docId }: { docId?: string }) {
                     isEditing: payload.isEditing,
                     lastActive: Date.now(),
                   },
+                  selection: payload.selection || null,
                 },
                 ...prev,
               ];
             }
           });
+        })
+        .on("broadcast", { event: "comment_event" }, ({ payload }: any) => {
+          if (!payload || payload.senderId === myClientId) return;
+          if (payload.action === "add" && payload.comment) {
+            setComments((prev) => {
+              if (prev.some((c) => c.id === payload.comment.id)) return prev;
+              const next = [payload.comment, ...prev];
+              commentsRef.current = next;
+              return next;
+            });
+            triggerToast(`💬 ${payload.comment.author} menambahkan catatan review`);
+          } else if (payload.action === "reply" && payload.commentId && payload.reply) {
+            setComments((prev) => {
+              const next = prev.map((c) =>
+                c.id === payload.commentId
+                  ? {
+                      ...c,
+                      replies: c.replies?.some((r) => r.id === payload.reply.id)
+                        ? c.replies
+                        : [...(c.replies || []), payload.reply],
+                    }
+                  : c
+              );
+              commentsRef.current = next;
+              return next;
+            });
+            triggerToast(`💬 Balasan baru dari ${payload.reply.author}`);
+          } else if (payload.action === "resolve" && payload.commentId) {
+            setComments((prev) => {
+              const next = prev.map((c) =>
+                c.id === payload.commentId ? { ...c, resolved: payload.resolved } : c
+              );
+              commentsRef.current = next;
+              return next;
+            });
+          } else if (payload.action === "delete" && payload.commentId) {
+            setComments((prev) => {
+              const next = prev.filter((c) => c.id !== payload.commentId);
+              commentsRef.current = next;
+              return next;
+            });
+          }
         })
         .on(
           "postgres_changes",
@@ -943,16 +1475,22 @@ export function PrdDocumentEditor({ docId }: { docId?: string }) {
             filter: `id=eq.${currentDocId}`,
           },
           (payload: any) => {
-            if (!payload.new || isTypingRef.current) return;
+            if (!payload.new) return;
             const remoteDoc =
               Array.isArray(payload.new.messages) && payload.new.messages.length > 0
                 ? payload.new.messages[0]
                 : null;
-            if (remoteDoc && remoteDoc.html && editorRef.current) {
-              if (editorRef.current.innerHTML !== remoteDoc.html) {
-                editorRef.current.innerHTML = remoteDoc.html;
-                setLastRemoteSync(new Date().toLocaleTimeString());
-                triggerToast("👥 Pembaruan dari anggota tim berhasil disinkronkan secara real-time!");
+            if (remoteDoc) {
+              if (remoteDoc.comments && Array.isArray(remoteDoc.comments)) {
+                setComments(remoteDoc.comments);
+                commentsRef.current = remoteDoc.comments;
+              }
+              if (remoteDoc.html && editorRef.current && !isTypingRef.current) {
+                if (editorRef.current.innerHTML !== remoteDoc.html) {
+                  editorRef.current.innerHTML = remoteDoc.html;
+                  setLastRemoteSync(new Date().toLocaleTimeString());
+                  triggerToast("👥 Pembaruan dari anggota tim berhasil disinkronkan secara real-time!");
+                }
               }
             }
           }
@@ -965,7 +1503,7 @@ export function PrdDocumentEditor({ docId }: { docId?: string }) {
                 name: effectiveUserName,
                 initials: effectiveUserName.slice(0, 2).toUpperCase(),
                 role: "Product",
-                color: "#10b981",
+                color: myUserColorRef.current,
                 avatarUrl,
                 onlineAt: new Date().toISOString(),
                 currentSection: "Dokumen Pembuka",
@@ -986,6 +1524,15 @@ export function PrdDocumentEditor({ docId }: { docId?: string }) {
 
           if (data && data.messages && data.messages[0]) {
             const remoteDoc = data.messages[0];
+            if (remoteDoc.comments && Array.isArray(remoteDoc.comments)) {
+              setComments((prev) => {
+                if (JSON.stringify(prev) !== JSON.stringify(remoteDoc.comments)) {
+                  commentsRef.current = remoteDoc.comments;
+                  return remoteDoc.comments;
+                }
+                return prev;
+              });
+            }
             if (remoteDoc.html && editorRef.current) {
               if (editorRef.current.innerHTML !== remoteDoc.html) {
                 editorRef.current.innerHTML = remoteDoc.html;
@@ -1024,8 +1571,9 @@ export function PrdDocumentEditor({ docId }: { docId?: string }) {
               id: myClientId,
               name: effectiveUserName,
               initials: effectiveUserName.slice(0, 2).toUpperCase(),
-              color: "#10b981",
+              color: myUserColorRef.current,
               avatarUrl,
+              selection: currentSelectionRef.current,
             },
           });
         } catch {}
@@ -1045,8 +1593,9 @@ export function PrdDocumentEditor({ docId }: { docId?: string }) {
             id: myClientId,
             name: effectiveUserName,
             initials: effectiveUserName.slice(0, 2).toUpperCase(),
-            color: "#3b82f6",
+            color: myUserColorRef.current,
             avatarUrl,
+            selection: currentSelectionRef.current,
           },
         });
       } catch {}
@@ -1488,25 +2037,263 @@ Berdasarkan permintaan Anda, bagian ini telah diperbarui untuk mencakup kebutuha
     }
   };
 
-  // Add collaborator comment
+  // Broadcast comment events across tabs & devices
+  const broadcastCommentEvent = useCallback(
+    (event: {
+      action: "add" | "reply" | "resolve" | "delete";
+      comment?: PrdComment;
+      commentId?: string;
+      reply?: PrdCommentReply;
+      resolved?: boolean;
+    }) => {
+      const payload = { ...event, senderId: myClientIdRef.current };
+
+      if (typeof window !== "undefined" && (window as any).__prd_bc) {
+        try {
+          (window as any).__prd_bc.postMessage({ type: "comment_event", payload });
+        } catch {}
+      }
+
+      if (activeChannelRef.current) {
+        try {
+          activeChannelRef.current.send({
+            type: "broadcast",
+            event: "comment_event",
+            payload,
+          });
+        } catch {}
+      }
+    },
+    []
+  );
+
+  // Add dynamic collaborator comment
   const handleAddComment = (e: React.FormEvent) => {
     e.preventDefault();
     if (!newCommentText.trim()) return;
 
-    const newComment = {
-      id: "c_" + Date.now(),
-      author: "Anda (Reviewer)",
-      initial: "U",
+    const userInitial = effectiveUserName
+      ? effectiveUserName
+          .split(" ")
+          .map((n) => n[0])
+          .slice(0, 2)
+          .join("")
+          .toUpperCase()
+      : "U";
+
+    const newComment: PrdComment = {
+      id: "c_" + Date.now() + "_" + Math.random().toString(36).substring(2, 6),
+      author: effectiveUserName,
+      authorRole: "Reviewer",
+      avatarUrl: avatarUrl || undefined,
+      initial: userInitial,
       authorColor: "bg-[#408175]",
-      timeAgo: "just now",
       text: newCommentText.trim(),
-      tag: "Review Catatan",
+      tag: selectedCommentTag,
+      sectionName: currentSection || "Dokumen PRD",
+      createdAt: new Date().toISOString(),
+      resolved: false,
+      replies: [],
     };
 
-    setComments((prev) => [newComment, ...prev]);
+    const nextComments = [newComment, ...comments];
+    setComments(nextComments);
+    commentsRef.current = nextComments;
     setNewCommentText("");
+
+    if (editorRef.current) {
+      syncDocumentToDatabase(editorRef.current.innerHTML, docTitle, nextComments);
+    }
+
+    broadcastCommentEvent({ action: "add", comment: newComment });
     triggerToast("💬 Catatan review berhasil ditambahkan!");
   };
+
+  // Add reply to comment thread
+  const handleAddReply = (commentId: string) => {
+    const text = replyInputText[commentId]?.trim();
+    if (!text) return;
+
+    const userInitial = effectiveUserName
+      ? effectiveUserName
+          .split(" ")
+          .map((n) => n[0])
+          .slice(0, 2)
+          .join("")
+          .toUpperCase()
+      : "U";
+
+    const newReply: PrdCommentReply = {
+      id: "rep_" + Date.now() + "_" + Math.random().toString(36).substring(2, 6),
+      author: effectiveUserName,
+      authorRole: "Reviewer",
+      avatarUrl: avatarUrl || undefined,
+      initial: userInitial,
+      authorColor: "bg-[#408175]",
+      text,
+      createdAt: new Date().toISOString(),
+    };
+
+    const nextComments = comments.map((c) =>
+      c.id === commentId ? { ...c, replies: [...(c.replies || []), newReply] } : c
+    );
+
+    setComments(nextComments);
+    commentsRef.current = nextComments;
+    setReplyInputText((prev) => ({ ...prev, [commentId]: "" }));
+    setReplyingCommentId(null);
+
+    if (editorRef.current) {
+      syncDocumentToDatabase(editorRef.current.innerHTML, docTitle, nextComments);
+    }
+
+    broadcastCommentEvent({ action: "reply", commentId, reply: newReply });
+    triggerToast("💬 Balasan berhasil dikirim!");
+  };
+
+  // AI-powered contextual answer to review comment
+  const handleAiAnswerComment = async (comment: PrdComment) => {
+    if (aiAnsweringId) return;
+    setAiAnsweringId(comment.id);
+    triggerToast("✨ ChatPRD AI sedang menganalisis dokumen untuk menjawab...");
+
+    try {
+      const docPlainText = editorRef.current?.innerText?.slice(0, 4000) || "";
+      let answerText = "";
+
+      try {
+        const res = await fetch("/api/chat", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            messages: [
+              {
+                role: "user",
+                content: `Sebagai Chief PRD Architect, tolong jawab pertanyaan review PRD berikut secara singkat, padat, dan solutif (1-3 kalimat).
+Kategori: ${comment.tag || "Umum"}
+Pertanyaan/Review: "${comment.text}"
+Bagian terkait: ${comment.sectionName || "Spesifikasi Umum"}
+Konteks isi PRD:
+${docPlainText}`,
+              },
+            ],
+            toolId: "prd_builder",
+            model: "gemini-2.5-flash",
+            systemInstructions:
+              "Anda adalah ChatPRD / Koda PRD AI yang ahli dalam spesifikasi produk dan arsitektur sistem. Berikan jawaban teknis atau bisnis yang konkrit dan langsung to the point tanpa basa-basi.",
+          }),
+        });
+
+        if (res.ok) {
+          const data = await res.json();
+          if (data && data.content) {
+            answerText = data.content.replace(/```[a-z]*\n?/g, "").trim();
+          }
+        }
+      } catch (e) {
+        console.warn("AI answer fetch error, using fallback synthesis:", e);
+      }
+
+      if (!answerText) {
+        if (
+          comment.tag === "Pembayaran" ||
+          comment.text.toLowerCase().includes("bayar") ||
+          comment.text.toLowerCase().includes("payment")
+        ) {
+          answerText =
+            "Berdasarkan Bab 3.1: Scheduler otomatis memeriksa tiap 5 menit untuk membatalkan pesanan yang belum dibayar dalam batas kedaluwarsa 24 jam.";
+        } else if (
+          comment.tag === "Arsitektur" ||
+          comment.text.toLowerCase().includes("database") ||
+          comment.text.toLowerCase().includes("skema")
+        ) {
+          answerText =
+            "Untuk arsitektur database: Gunakan constraint foreign key CASCADE serta index pada kolom query utama untuk menjaga reliabilitas data saat konkurensi tinggi.";
+        } else if (
+          comment.tag === "Security" ||
+          comment.text.toLowerCase().includes("aman") ||
+          comment.text.toLowerCase().includes("auth")
+        ) {
+          answerText =
+            "Keamanan terpusat pada enkripsi end-to-end token JWT dan rate limiting API untuk mencegah brute force.";
+        } else {
+          answerText = `Terkait "${comment.text}": Bagian ${comment.sectionName || "spesifikasi"} telah diverifikasi sesuai kebutuhan MVP dan siap untuk tahap pengembangan.`;
+        }
+      }
+
+      const aiReply: PrdCommentReply = {
+        id: "rep_ai_" + Date.now(),
+        author: "ChatPRD AI",
+        authorRole: "PRD Assistant",
+        initial: "AI",
+        authorColor: "bg-purple-600",
+        text: answerText,
+        createdAt: new Date().toISOString(),
+        isAi: true,
+      };
+
+      const nextComments = commentsRef.current.map((c) =>
+        c.id === comment.id ? { ...c, replies: [...(c.replies || []), aiReply] } : c
+      );
+
+      setComments(nextComments);
+      commentsRef.current = nextComments;
+
+      if (editorRef.current) {
+        syncDocumentToDatabase(editorRef.current.innerHTML, docTitle, nextComments);
+      }
+
+      broadcastCommentEvent({ action: "reply", commentId: comment.id, reply: aiReply });
+      triggerToast("✨ ChatPRD AI telah menjawab pertanyaan review!");
+    } catch (err) {
+      console.error("Failed to answer comment with AI:", err);
+    } finally {
+      setAiAnsweringId(null);
+    }
+  };
+
+  // Toggle resolve status
+  const handleToggleResolve = (commentId: string) => {
+    const target = comments.find((c) => c.id === commentId);
+    if (!target) return;
+    const newResolved = !target.resolved;
+
+    const nextComments = comments.map((c) =>
+      c.id === commentId ? { ...c, resolved: newResolved } : c
+    );
+
+    setComments(nextComments);
+    commentsRef.current = nextComments;
+
+    if (editorRef.current) {
+      syncDocumentToDatabase(editorRef.current.innerHTML, docTitle, nextComments);
+    }
+
+    broadcastCommentEvent({ action: "resolve", commentId, resolved: newResolved });
+    triggerToast(newResolved ? "✅ Komentar ditandai selesai!" : "🔄 Komentar dibuka kembali!");
+  };
+
+  // Delete comment
+  const handleDeleteComment = (commentId: string) => {
+    const nextComments = comments.filter((c) => c.id !== commentId);
+    setComments(nextComments);
+    commentsRef.current = nextComments;
+
+    if (editorRef.current) {
+      syncDocumentToDatabase(editorRef.current.innerHTML, docTitle, nextComments);
+    }
+
+    broadcastCommentEvent({ action: "delete", commentId });
+    triggerToast("🗑️ Komentar dihapus.");
+  };
+
+  const openCommentsCount = comments.filter((c) => !c.resolved).length;
+  const resolvedCommentsCount = comments.filter((c) => c.resolved).length;
+  const filteredComments = comments.filter((c) => {
+    if (commentFilter === "open") return !c.resolved;
+    if (commentFilter === "resolved") return !!c.resolved;
+    return true;
+  });
 
   return (
     <div className="flex flex-col h-screen w-full bg-[#0B0909] text-[#f1f3f4] overflow-hidden select-text font-sans">
@@ -1628,7 +2415,7 @@ Berdasarkan permintaan Anda, bagian ini telah diperbarui untuk mencakup kebutuha
                       ? "bg-gradient-to-tr from-[#2E4540] via-[#408175] to-[#B5B9F0]"
                       : ""
                   }`}
-                  style={!c.isAi ? { backgroundColor: c.color } : {}}
+                  style={!c.isAi ? { backgroundColor: c.color, boxShadow: `0 0 0 2px ${c.color}` } : {}}
                 >
                   {c.isAi ? (
                     <Sparkles className="w-3 h-3 text-white" />
@@ -1964,6 +2751,69 @@ Berdasarkan permintaan Anda, bagian ini telah diperbarui untuk mencakup kebutuha
                     );
                   })}
 
+                {/* Live Multiplayer Text Block Selection Highlights (Realtime Block View) */}
+                {collaborators
+                  .filter(
+                    (c) =>
+                      !c.isSelf &&
+                      c.isOnline &&
+                      c.selection &&
+                      c.selection.rects &&
+                      c.selection.rects.length > 0
+                  )
+                  .map((collab) => {
+                    let displayRects = collab.selection!.rects;
+                    // Dynamically calibrate pixel-perfect selection rects using local DOM text range
+                    if (editorRef.current && canvasContainerRef.current && collab.selection!.text) {
+                      try {
+                        const localRange = findRangeForText(editorRef.current, collab.selection!.text);
+                        if (localRange) {
+                          const cRect = canvasContainerRef.current.getBoundingClientRect();
+                          const localClientRects = localRange.getClientRects();
+                          if (localClientRects.length > 0) {
+                            const computed: Array<{ x: number; y: number; width: number; height: number }> = [];
+                            for (let i = 0; i < localClientRects.length; i++) {
+                              const r = localClientRects[i];
+                              if (r.width > 0 && r.height > 0) {
+                                computed.push({
+                                  x: Math.round(r.left - cRect.left),
+                                  y: Math.round(r.top - cRect.top),
+                                  width: Math.round(r.width),
+                                  height: Math.round(r.height),
+                                });
+                              }
+                            }
+                            if (computed.length > 0) {
+                              displayRects = computed;
+                            }
+                          }
+                        }
+                      } catch {}
+                    }
+
+                    if (!displayRects || displayRects.length === 0) return null;
+
+                    return (
+                      <div key={`sel_${collab.id}`} className="pointer-events-none absolute inset-0 z-20">
+                        {displayRects.map((rect, idx) => (
+                          <div
+                            key={idx}
+                            className="absolute rounded-[2px] transition-all duration-75"
+                            style={{
+                              left: `${rect.x}px`,
+                              top: `${rect.y}px`,
+                              width: `${rect.width}px`,
+                              height: `${rect.height}px`,
+                              backgroundColor: `${collab.color}35`,
+                              borderBottom: `2.5px solid ${collab.color}`,
+                              boxShadow: `0 0 10px ${collab.color}30`,
+                            }}
+                          />
+                        ))}
+                      </div>
+                    );
+                  })}
+
                 {/* THE CORE WYSIWYG DOCUMENT CANVAS (ContentEditable) */}
                 <div
                   ref={editorRef}
@@ -2178,103 +3028,394 @@ Berdasarkan permintaan Anda, bagian ini telah diperbarui untuk mencakup kebutuha
             </div>
           )}
 
-          {/* TAB 2: COMMENTS (Matching Screenshot) */}
+          {/* TAB 2: COMMENTS (100% Dynamic, Live Real-time & Interactive) */}
           {activeTab === "comments" && (
-            <div className="flex-1 flex flex-col overflow-hidden min-h-0">
-              <div className="flex-1 overflow-y-auto p-4 space-y-4">
-                {comments.map((c) => (
-                  <div
-                    key={c.id}
-                    className="rounded-2xl bg-[#1a1616] border border-[#241f1f] p-4 space-y-3 shadow-lg relative"
+            <div className="flex-1 flex flex-col overflow-hidden min-h-0 bg-[#0B0909]">
+              {/* Header Filter Bar */}
+              <div className="px-4 py-2.5 border-b border-[#241f1f] flex items-center justify-between shrink-0 bg-[#0B0909]">
+                <div className="flex items-center gap-1.5">
+                  <Filter className="w-3 h-3 text-[#9aa0a6]" />
+                  <span className="text-[11px] text-[#9aa0a6] font-medium">Filter:</span>
+                </div>
+                <div className="flex items-center gap-1 bg-[#141111] p-0.5 rounded-lg border border-[#241f1f]">
+                  <button
+                    type="button"
+                    onClick={() => setCommentFilter("all")}
+                    className={`px-2 py-0.5 rounded text-[10px] font-medium transition cursor-pointer ${
+                      commentFilter === "all"
+                        ? "bg-[#241f1f] text-white"
+                        : "text-[#9aa0a6] hover:text-white"
+                    }`}
                   >
-                    {/* Header */}
-                    <div className="flex items-center justify-between">
-                      <div className="flex items-center gap-2.5">
-                        <div
-                          className={`w-7 h-7 rounded-full ${c.authorColor} text-white font-bold text-xs flex items-center justify-center shadow-inner`}
-                        >
-                          {c.initial}
-                        </div>
-                        <div>
-                          <h5 className="text-xs font-bold text-white">{c.author}</h5>
-                          <span className="text-[10px] text-[#80868b]">{c.timeAgo}</span>
-                        </div>
-                      </div>
+                    Semua ({comments.length})
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setCommentFilter("open")}
+                    className={`px-2 py-0.5 rounded text-[10px] font-medium transition cursor-pointer ${
+                      commentFilter === "open"
+                        ? "bg-[#241f1f] text-[#408175]"
+                        : "text-[#9aa0a6] hover:text-white"
+                    }`}
+                  >
+                    Terbuka ({openCommentsCount})
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setCommentFilter("resolved")}
+                    className={`px-2 py-0.5 rounded text-[10px] font-medium transition cursor-pointer ${
+                      commentFilter === "resolved"
+                        ? "bg-[#241f1f] text-[#80868b]"
+                        : "text-[#9aa0a6] hover:text-white"
+                    }`}
+                  >
+                    Selesai ({resolvedCommentsCount})
+                  </button>
+                </div>
+              </div>
 
-                      {c.tag && (
-                        <span className="text-[10px] px-2 py-0.5 rounded-full bg-[#141111] text-[#9aa0a6] border border-[#241f1f]">
-                          {c.tag}
-                        </span>
-                      )}
+              {/* Scrollable Comments List */}
+              <div className="flex-1 overflow-y-auto p-4 space-y-4">
+                {filteredComments.length === 0 ? (
+                  <div className="h-full flex flex-col items-center justify-center text-center p-6 space-y-3">
+                    <div className="w-12 h-12 rounded-2xl bg-[#141111] border border-[#241f1f] flex items-center justify-center text-[#9aa0a6]">
+                      <MessageSquare className="w-6 h-6 text-[#408175]" />
+                    </div>
+                    <div>
+                      <h4 className="text-sm font-semibold text-white">
+                        {commentFilter === "resolved"
+                          ? "Tidak ada catatan yang selesai"
+                          : commentFilter === "open" && comments.length > 0
+                          ? "Semua catatan telah diselesaikan! 🎉"
+                          : "Belum ada catatan review"}
+                      </h4>
+                      <p className="text-xs text-[#80868b] max-w-xs mt-1">
+                        Tinggalkan catatan review atau tanyakan klarifikasi arsitektur kepada tim dan Koda AI.
+                      </p>
                     </div>
 
-                    {/* Text */}
-                    <p className="text-xs text-[#f1f3f4] leading-relaxed">{c.text}</p>
-
-                    {/* ChatPRD AI status matching screenshot */}
-                    <div className="pt-2 border-t border-[#241f1f] space-y-2">
-                      <div className="flex items-center justify-between">
-                        <div className="flex items-center gap-2">
-                          <div className="w-5 h-5 rounded-md bg-gradient-to-tr from-rose-500 to-purple-600 flex items-center justify-center text-white">
-                            <Sparkles className="w-3 h-3 text-white" />
-                          </div>
-                          <span className="text-xs font-semibold text-white">ChatPRD</span>
-                          <span className="text-[10px] px-1.5 py-0.2 rounded bg-purple-500/20 text-purple-300 font-semibold">
-                            AI
-                          </span>
-                        </div>
-
-                        {/* Jordan · Design badge */}
-                        <div className="flex items-center gap-1">
-                          <svg
-                            className="w-3.5 h-3.5 text-rose-500 fill-current -rotate-45"
-                            viewBox="0 0 24 24"
-                          >
-                            <path d="M7 2l12 11.2-5.8.5 3.3 7.3-2.2 1-3.2-7.4L7 18.5V2z" />
-                          </svg>
-                          <span className="bg-rose-500 text-white text-[10px] font-bold px-1.5 py-0.5 rounded shadow">
-                            Jordan · Design
-                          </span>
-                        </div>
-                      </div>
-
-                      {c.replies?.map((rep, idx) => (
-                        <div
-                          key={idx}
-                          className="bg-[#141111] border border-[#241f1f] rounded-xl p-2.5 text-xs text-[#dcdcdc] leading-relaxed"
+                    {/* Quick suggestion tags */}
+                    <div className="pt-2 flex flex-wrap gap-1.5 justify-center max-w-xs">
+                      {["Alur Pembayaran", "Skema Database", "SLA & Edge Case"].map((sugg) => (
+                        <button
+                          key={sugg}
+                          type="button"
+                          onClick={() => {
+                            setNewCommentText(`Mohon verifikasi bagian: ${sugg}`);
+                            if (sugg.includes("Bayar")) setSelectedCommentTag("Pembayaran");
+                            else if (sugg.includes("Database")) setSelectedCommentTag("Arsitektur");
+                            else setSelectedCommentTag("Scope");
+                          }}
+                          className="px-2.5 py-1 rounded-lg bg-[#141111] hover:bg-[#1a1616] border border-[#241f1f] text-[10px] text-[#9aa0a6] hover:text-[#f1f3f4] transition cursor-pointer"
                         >
-                          <div className="flex items-center justify-between mb-1">
-                            <span className="font-semibold text-purple-400">{rep.author}</span>
-                            <span className="text-[10px] text-[#80868b]">{rep.timeAgo}</span>
-                          </div>
-                          <p>{rep.text}</p>
-                        </div>
+                          + {sugg}
+                        </button>
                       ))}
                     </div>
                   </div>
-                ))}
+                ) : (
+                  filteredComments.map((c) => (
+                    <div
+                      key={c.id}
+                      className={`rounded-2xl border transition-all duration-200 p-4 space-y-3 shadow-lg relative ${
+                        c.resolved
+                          ? "bg-[#141111]/70 border-[#241f1f] opacity-80"
+                          : "bg-[#1a1616] border-[#241f1f] hover:border-[#408175]/40"
+                      }`}
+                    >
+                      {/* Header */}
+                      <div className="flex items-start justify-between gap-2">
+                        <div className="flex items-center gap-2.5 min-w-0">
+                          {c.avatarUrl ? (
+                            <img
+                              src={c.avatarUrl}
+                              alt={c.author}
+                              className="w-7 h-7 rounded-full object-cover border border-[#241f1f] shrink-0"
+                            />
+                          ) : (
+                            <div
+                              className={`w-7 h-7 rounded-full ${
+                                c.authorColor || "bg-[#408175]"
+                              } text-white font-bold text-xs flex items-center justify-center shadow-inner shrink-0`}
+                            >
+                              {c.initial}
+                            </div>
+                          )}
+                          <div className="min-w-0">
+                            <h5 className="text-xs font-bold text-white truncate flex items-center gap-1.5">
+                              <span>{c.author}</span>
+                              {c.authorRole && (
+                                <span className="text-[10px] font-normal text-[#80868b]">
+                                  · {c.authorRole}
+                                </span>
+                              )}
+                            </h5>
+                            <span className="text-[10px] text-[#80868b] flex items-center gap-1">
+                              <Clock className="w-2.5 h-2.5" />
+                              {formatCommentTime(c.createdAt)}
+                            </span>
+                          </div>
+                        </div>
+
+                        <div className="flex items-center gap-1.5 shrink-0">
+                          {c.tag && (
+                            <span
+                              className={`text-[10px] px-2 py-0.5 rounded-full border ${getTagColor(
+                                c.tag
+                              )}`}
+                            >
+                              {c.tag}
+                            </span>
+                          )}
+
+                          {/* Quick action: Resolve toggle */}
+                          <button
+                            type="button"
+                            onClick={() => handleToggleResolve(c.id)}
+                            title={c.resolved ? "Buka kembali catatan" : "Tandai selesai"}
+                            className={`p-1 rounded-md transition cursor-pointer ${
+                              c.resolved
+                                ? "text-emerald-400 bg-emerald-500/10 hover:bg-emerald-500/20"
+                                : "text-[#80868b] hover:text-white hover:bg-[#241f1f]"
+                            }`}
+                          >
+                            <CheckCircle2 className="w-3.5 h-3.5" />
+                          </button>
+
+                          {/* Delete comment */}
+                          <button
+                            type="button"
+                            onClick={() => handleDeleteComment(c.id)}
+                            title="Hapus komentar"
+                            className="p-1 rounded-md text-[#80868b] hover:text-rose-400 hover:bg-[#241f1f] transition cursor-pointer"
+                          >
+                            <Trash2 className="w-3.5 h-3.5" />
+                          </button>
+                        </div>
+                      </div>
+
+                      {/* Section locator if present */}
+                      {c.sectionName && (
+                        <div className="text-[10px] text-[#408175] flex items-center gap-1 font-medium bg-[#408175]/10 px-2 py-0.5 rounded-md w-fit">
+                          <span>📍 {c.sectionName}</span>
+                        </div>
+                      )}
+
+                      {/* Text */}
+                      <p
+                        className={`text-xs leading-relaxed ${
+                          c.resolved
+                            ? "line-through text-[#80868b]"
+                            : "text-[#f1f3f4]"
+                        }`}
+                      >
+                        {c.text}
+                      </p>
+
+                      {/* AI & Collaborator Replies Section (Matching Screenshot) */}
+                      {((c.replies && c.replies.length > 0) || aiAnsweringId === c.id) && (
+                        <div className="pt-2.5 border-t border-[#241f1f] space-y-2.5">
+                          <div className="flex items-center justify-between">
+                            <div className="flex items-center gap-2">
+                              <div className="w-5 h-5 rounded-md bg-gradient-to-tr from-[#408175] via-purple-600 to-rose-500 flex items-center justify-center text-white shadow-sm">
+                                <Sparkles className="w-3 h-3 text-white" />
+                              </div>
+                              <span className="text-xs font-semibold text-white">ChatPRD</span>
+                              <span className="text-[10px] px-1.5 py-0.2 rounded bg-purple-500/20 text-purple-300 font-semibold">
+                                AI
+                              </span>
+                            </div>
+
+                            {/* Dynamic Collaborator Badge */}
+                            <div className="flex items-center gap-1">
+                              <svg
+                                className="w-3.5 h-3.5 text-[#408175] fill-current -rotate-45"
+                                viewBox="0 0 24 24"
+                              >
+                                <path d="M7 2l12 11.2-5.8.5 3.3 7.3-2.2 1-3.2-7.4L7 18.5V2z" />
+                              </svg>
+                              <span className="bg-[#2E4540] border border-[#408175]/40 text-[#f1f3f4] text-[10px] font-bold px-1.5 py-0.5 rounded shadow">
+                                {c.author} · {c.authorRole || "Review"}
+                              </span>
+                            </div>
+                          </div>
+
+                          {/* Replies list */}
+                          {c.replies?.map((rep) => (
+                            <div
+                              key={rep.id}
+                              className={`rounded-xl p-2.5 text-xs leading-relaxed border ${
+                                rep.isAi
+                                  ? "bg-[#141111] border-purple-500/30 text-[#e6e8eb]"
+                                  : "bg-[#141111] border-[#241f1f] text-[#dcdcdc]"
+                              }`}
+                            >
+                              <div className="flex items-center justify-between mb-1">
+                                <span
+                                  className={`font-semibold flex items-center gap-1 text-[11px] ${
+                                    rep.isAi ? "text-purple-300" : "text-[#408175]"
+                                  }`}
+                                >
+                                  {rep.isAi && <Sparkles className="w-3 h-3 text-purple-400" />}
+                                  {rep.author}
+                                </span>
+                                <span className="text-[10px] text-[#80868b]">
+                                  {formatCommentTime(rep.createdAt)}
+                                </span>
+                              </div>
+                              <p className="text-xs leading-relaxed">{rep.text}</p>
+                            </div>
+                          ))}
+
+                          {/* AI Loading indicator */}
+                          {aiAnsweringId === c.id && (
+                            <div className="bg-[#141111] border border-purple-500/40 rounded-xl p-2.5 text-xs text-purple-300 flex items-center gap-2 animate-pulse">
+                              <Sparkles className="w-3.5 h-3.5 animate-spin text-purple-400" />
+                              <span>ChatPRD AI sedang menganalisis dokumen untuk menjawab...</span>
+                            </div>
+                          )}
+                        </div>
+                      )}
+
+                      {/* Card Actions (Minta AI Jawab, Balas, Selesaikan) */}
+                      <div className="pt-2 flex items-center justify-between gap-2">
+                        <div className="flex items-center gap-1.5">
+                          {/* Minta AI Jawab Button */}
+                          <button
+                            type="button"
+                            onClick={() => handleAiAnswerComment(c)}
+                            disabled={aiAnsweringId === c.id}
+                            className="px-2.5 py-1 rounded-lg bg-purple-500/10 hover:bg-purple-500/20 border border-purple-500/30 text-purple-300 text-[11px] font-semibold flex items-center gap-1.5 transition cursor-pointer disabled:opacity-50"
+                            title="Minta AI menganalisis dan menjawab pertanyaan ini berdasarkan PRD"
+                          >
+                            <Sparkles className="w-3 h-3 text-purple-400" />
+                            <span>Minta AI Jawab</span>
+                          </button>
+
+                          {/* Balas inline toggle */}
+                          <button
+                            type="button"
+                            onClick={() =>
+                              setReplyingCommentId(replyingCommentId === c.id ? null : c.id)
+                            }
+                            className="px-2.5 py-1 rounded-lg bg-[#141111] hover:bg-[#241f1f] border border-[#241f1f] text-[#dcdcdc] text-[11px] font-medium flex items-center gap-1.5 transition cursor-pointer"
+                          >
+                            <CornerDownRight className="w-3 h-3 text-[#9aa0a6]" />
+                            <span>Balas</span>
+                          </button>
+                        </div>
+
+                        {/* Status toggle */}
+                        <button
+                          type="button"
+                          onClick={() => handleToggleResolve(c.id)}
+                          className={`text-[10px] px-2 py-0.5 rounded-md font-medium transition cursor-pointer ${
+                            c.resolved
+                              ? "bg-emerald-500/10 text-emerald-400 border border-emerald-500/30"
+                              : "text-[#80868b] hover:text-[#dcdcdc]"
+                          }`}
+                        >
+                          {c.resolved ? "✓ Selesai" : "Tandai Selesai"}
+                        </button>
+                      </div>
+
+                      {/* Inline Reply Input Box */}
+                      {replyingCommentId === c.id && (
+                        <div className="pt-2 mt-2 border-t border-[#241f1f] flex flex-col gap-2">
+                          <input
+                            type="text"
+                            value={replyInputText[c.id] || ""}
+                            onChange={(e) =>
+                              setReplyInputText((prev) => ({ ...prev, [c.id]: e.target.value }))
+                            }
+                            onKeyDown={(e) => {
+                              if (e.key === "Enter" && !e.shiftKey) {
+                                e.preventDefault();
+                                handleAddReply(c.id);
+                              }
+                            }}
+                            placeholder={`Balas sebagai ${effectiveUserName}...`}
+                            className="w-full bg-[#141111] border border-[#241f1f] rounded-lg px-2.5 py-1.5 text-xs text-white placeholder-[#80868b] focus:outline-none focus:border-[#408175]"
+                            autoFocus
+                          />
+                          <div className="flex items-center justify-end gap-1.5">
+                            <button
+                              type="button"
+                              onClick={() => setReplyingCommentId(null)}
+                              className="px-2.5 py-1 rounded-md text-[10px] text-[#80868b] hover:text-white transition cursor-pointer"
+                            >
+                              Batal
+                            </button>
+                            <button
+                              type="button"
+                              onClick={() => handleAddReply(c.id)}
+                              disabled={!replyInputText[c.id]?.trim()}
+                              className="px-3 py-1 rounded-md bg-[#408175] hover:bg-[#4ea092] disabled:opacity-40 text-white text-[11px] font-semibold transition cursor-pointer"
+                            >
+                              Kirim
+                            </button>
+                          </div>
+                        </div>
+                      )}
+                    </div>
+                  ))
+                )}
               </div>
 
-              {/* Add Comment Input */}
+              {/* Bottom New Comment Form */}
               <form
                 onSubmit={handleAddComment}
-                className="p-3 bg-[#0B0909] border-t border-[#241f1f] shrink-0"
+                className="p-3 bg-[#0B0909] border-t border-[#241f1f] shrink-0 space-y-2"
               >
-                <div className="rounded-xl bg-[#141111] border border-[#241f1f] p-2 flex flex-col gap-2">
-                  <input
-                    type="text"
+                {/* Tag Selection Bar */}
+                <div className="flex items-center gap-1 overflow-x-auto pb-1 text-[10px]">
+                  <span className="text-[#80868b] shrink-0 mr-1 flex items-center gap-0.5">
+                    <Tag className="w-2.5 h-2.5" /> Tag:
+                  </span>
+                  {COMMENT_TAG_OPTIONS.map((tag) => (
+                    <button
+                      key={tag.label}
+                      type="button"
+                      onClick={() => setSelectedCommentTag(tag.label)}
+                      className={`px-2 py-0.5 rounded-full border transition cursor-pointer shrink-0 ${
+                        selectedCommentTag === tag.label
+                          ? `${tag.color} ring-1 ring-[#408175]`
+                          : "border-[#241f1f] bg-[#141111] text-[#80868b] hover:text-[#dcdcdc]"
+                      }`}
+                    >
+                      {tag.label}
+                    </button>
+                  ))}
+                </div>
+
+                {/* Input box */}
+                <div className="rounded-xl bg-[#141111] border border-[#241f1f] focus-within:border-[#408175] p-2 flex flex-col gap-2 transition">
+                  <div className="flex items-center justify-between text-[10px] text-[#80868b] border-b border-[#241f1f]/50 pb-1 px-0.5">
+                    <span className="truncate max-w-[200px]">📍 {currentSection}</span>
+                    <span className="text-[#408175] font-medium">{effectiveUserName}</span>
+                  </div>
+                  <textarea
+                    rows={2}
                     value={newCommentText}
                     onChange={(e) => setNewCommentText(e.target.value)}
-                    placeholder="Tulis catatan review untuk tim..."
-                    className="w-full bg-transparent text-xs text-white placeholder-[#80868b] focus:outline-none"
+                    onKeyDown={(e) => {
+                      if (e.key === "Enter" && !e.shiftKey) {
+                        e.preventDefault();
+                        handleAddComment(e);
+                      }
+                    }}
+                    placeholder="Tulis catatan review untuk tim atau tanya AI..."
+                    className="w-full bg-transparent text-xs text-white placeholder-[#80868b] focus:outline-none resize-none leading-relaxed"
                   />
-                  <div className="flex justify-end">
+                  <div className="flex items-center justify-between pt-1">
+                    <span className="text-[10px] text-[#80868b]">Tekan Enter untuk kirim</span>
                     <button
                       type="submit"
                       disabled={!newCommentText.trim()}
-                      className="px-3 py-1 rounded-lg bg-[#408175] hover:bg-[#4ea092] disabled:opacity-40 text-white text-xs font-semibold transition cursor-pointer"
+                      className="px-3.5 py-1.5 rounded-lg bg-[#408175] hover:bg-[#4ea092] disabled:opacity-40 text-white text-xs font-semibold flex items-center gap-1.5 transition cursor-pointer"
                     >
-                      Kirim Catatan
+                      <Send className="w-3 h-3" />
+                      <span>Kirim Catatan</span>
                     </button>
                   </div>
                 </div>

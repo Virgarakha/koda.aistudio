@@ -2,6 +2,33 @@
 
 import { createClient, isSupabaseConfigured } from "@/lib/supabase/client";
 
+export interface PrdCommentReply {
+  id: string;
+  author: string;
+  authorRole?: string;
+  avatarUrl?: string;
+  initial: string;
+  authorColor: string;
+  text: string;
+  createdAt: string;
+  isAi?: boolean;
+}
+
+export interface PrdComment {
+  id: string;
+  author: string;
+  authorRole?: string;
+  avatarUrl?: string;
+  initial: string;
+  authorColor: string;
+  text: string;
+  tag?: string;
+  sectionName?: string;
+  createdAt: string;
+  resolved?: boolean;
+  replies?: PrdCommentReply[];
+}
+
 export interface PrdDocumentRecord {
   id: string;
   title: string;
@@ -14,6 +41,7 @@ export interface PrdDocumentRecord {
   sourceUrl?: string;
   version?: number;
   collaborators?: Array<{ name: string; role: string; avatarColor: string; initial: string }>;
+  comments?: PrdComment[];
 }
 
 const STORAGE_PREFIX = "koda_prd_doc_";
@@ -77,6 +105,7 @@ export async function savePrdDocument(doc: PrdDocumentRecord): Promise<PrdDocume
             sourceSessionId: updatedDoc.sourceSessionId,
             sourceUrl: updatedDoc.sourceUrl,
             collaborators: updatedDoc.collaborators,
+            comments: updatedDoc.comments || [],
           },
         ],
         updated_at: updatedDoc.updatedAt,
@@ -123,6 +152,7 @@ export async function getPrdDocumentById(id: string): Promise<PrdDocumentRecord 
             sourceUrl: docMsg.sourceUrl,
             version: docMsg.version || 1,
             collaborators: docMsg.collaborators,
+            comments: Array.isArray(docMsg.comments) ? docMsg.comments : [],
           };
 
           // Cache locally
