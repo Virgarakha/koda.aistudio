@@ -4,6 +4,7 @@ import { DribbbleDesignBlockData } from "@/components/playground/DribbbleDesignS
 import { CURATED_DRIBBLE_DESIGNS, categorizeTopic } from "@/lib/ai/dribbble";
 import { BOOKING_KOS_PRD_DOCUMENT } from "@/lib/ai/booking-kos-prd";
 import { generateDynamicPrdDocument } from "@/lib/ai/dynamic-prd";
+import { normalizeMarkdown } from "@/lib/ai/markdown-normalizer";
 
 export interface CompiledPrdData {
   appName: string;
@@ -1197,7 +1198,7 @@ Gunakan skema database dan aturan PRD berikut:
     flowchartData,
     dribbbleDesigns,
     databaseSchemaSql,
-    readmeMarkdown,
+    readmeMarkdown: normalizeMarkdown(readmeMarkdown),
     agentPrompt,
   };
 }

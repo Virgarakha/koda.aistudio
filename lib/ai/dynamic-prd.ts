@@ -267,7 +267,7 @@ Arsitektur yang direkomendasikan adalah Monolithic Modular Application dengan ${
 | **Testing** | Pest PHP / PHPUnit |
 
 ### 6.3 Struktur folder yang disarankan
-\`\`\`
+\`\`\`text
 app/
 ├── Enums/
 │   ├── OrderStatus.php

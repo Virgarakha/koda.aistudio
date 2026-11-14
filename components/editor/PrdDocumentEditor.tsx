@@ -39,6 +39,13 @@ import {
   Tag,
   Clock,
   Filter,
+  Printer,
+  Terminal,
+  Smartphone,
+  Workflow,
+  Database,
+  Image as ImageIcon,
+  FileSpreadsheet,
 } from "lucide-react";
 import {
   PrdDocumentRecord,
@@ -50,6 +57,22 @@ import {
 } from "@/lib/apps/prd-document-storage";
 import { createClient, isSupabaseConfigured } from "@/lib/supabase/client";
 import { useUserProfile } from "@/hooks/use-user-profile";
+import { normalizeMarkdown } from "@/lib/ai/markdown-normalizer";
+import { SystemFlowDiagram } from "@/components/playground/SystemFlowDiagram";
+import { VisualErdDiagram } from "@/components/playground/VisualErdDiagram";
+import { DribbbleDesignShowcase } from "@/components/playground/DribbbleDesignShowcase";
+import { InteractivePrototypePreview } from "@/components/playground/InteractivePrototypePreview";
+import { PrdCompletenessModal } from "@/components/tools/PrdCompletenessModal";
+import { PrdSecurityAuditModal } from "@/components/tools/PrdSecurityAuditModal";
+import { KodaCliConnectModal } from "@/components/tools/KodaCliConnectModal";
+import { compilePrdFromMessages } from "@/lib/ai/prd-compiler";
+import {
+  computePrdCompleteness,
+  computePrdSecurityAudit,
+  generateLinearJiraTasks,
+} from "@/lib/ai/prd-export-helpers";
+import { MarkdownRenderer } from "@/components/playground/MarkdownRenderer";
+import { getPrdSessionById, getPrdSessions, PrdSession } from "@/lib/apps/prd-storage";
 
 export interface RealtimeCollaborator {
   id: string;
@@ -79,13 +102,13 @@ export interface RealtimeCollaborator {
 // Markdown to Styled Rich HTML Converter (WYSIWYG representation)
 export function markdownToRichHtml(md: string): string {
   if (!md) return "";
-  let html = md.trim();
+  let html = normalizeMarkdown(md.trim());
 
   // Strip JSON blocks (prd-ready-json, etc.)
   html = html.replace(/```(?:prd-ready-json|prd-action-json|interview-json)[\s\S]*?```/g, "");
 
-  // Code blocks
-  html = html.replace(/```([\s\S]*?)```/g, (_m, p1) => {
+  // Code blocks (supports optional language identifier like ```text or ```php)
+  html = html.replace(/```(?:[a-zA-Z0-9_\-]+)?\s*([\s\S]*?)```/g, (_m, p1) => {
     const cleanCode = p1.trim().replace(/</g, "&lt;").replace(/>/g, "&gt;");
     return `<pre class="bg-[#161313] border border-[#241f1f] rounded-xl p-4 my-3 font-mono text-xs overflow-x-auto text-[#c4c7c5]"><code>${cleanCode}</code></pre>`;
   });
@@ -180,6 +203,24 @@ export function richHtmlToMarkdown(html: string): string {
   if (!html) return "";
   let text = html;
 
+  // Code blocks: Convert <pre><code> to ```text ... ``` BEFORE any tags are stripped!
+  text = text.replace(/<pre[^>]*>(?:<code[^>]*>)?([\s\S]*?)(?:<\/code>)?<\/pre>/gi, (_m, codeContent) => {
+    const unescaped = codeContent
+      .replace(/&lt;/g, "<")
+      .replace(/&gt;/g, ">")
+      .replace(/&amp;/g, "&")
+      .replace(/&quot;/g, '"')
+      .replace(/&#39;/g, "'")
+      .replace(/<br\s*\/?>/gi, "\n")
+      .replace(/<\/?(?:div|p)[^>]*>/gi, "\n")
+      .replace(/<[^>]+>/g, "");
+    return `\n\n\`\`\`text\n${unescaped.trim()}\n\`\`\`\n\n`;
+  });
+
+  // Strip strong/bold wrapping around headings before converting headings to markdown
+  text = text.replace(/<(?:strong|b)[^>]*>\s*(<h[1-6][^>]*>[\s\S]*?<\/h[1-6]>)\s*<\/(?:strong|b)>/gi, "$1");
+  text = text.replace(/(<h[1-6][^>]*>)\s*<(?:strong|b)[^>]*>([\s\S]*?)<\/(?:strong|b)>\s*(<\/h[1-6]>)/gi, "$1$2$3");
+
   // Headings
   text = text.replace(/<h1[^>]*>([\s\S]*?)<\/h1>/gi, "# $1\n\n");
   text = text.replace(/<h2[^>]*>([\s\S]*?)<\/h2>/gi, "## $1\n\n");
@@ -249,8 +290,8 @@ export function richHtmlToMarkdown(html: string): string {
     .replace(/&#39;/g, "'")
     .replace(/&nbsp;/g, " ");
 
-  // Normalize excessive blank lines
-  return text.replace(/\n{3,}/g, "\n\n").trim();
+  // Normalize excessive blank lines & malformed headings/trees
+  return normalizeMarkdown(text.replace(/\n{3,}/g, "\n\n").trim());
 }
 
 const DEFAULT_DOC_TITLE = "E-Commerce MVP Warm Earthy — PRD";
@@ -540,16 +581,25 @@ export function findRangeForText(root: Node, targetText: string): Range | null {
       range.setEnd(endNode, Math.min(endOffset, endNode.length));
       return range;
     }
-  } catch {}
+  } catch { }
   return null;
 }
 
-interface AiChatMessage {
+export interface PrdDirectEditPayload {
+  action?: "insert" | "replace" | "append";
+  sectionTitle?: string;
+  html?: string;
+  summary?: string;
+}
+
+export interface AiChatMessage {
   id: string;
   sender: "user" | "ai";
   content: string;
   appliedAction?: string;
   timestamp: string;
+  editPayload?: PrdDirectEditPayload | null;
+  isApplied?: boolean;
 }
 
 export function PrdDocumentEditor({ docId }: { docId?: string }) {
@@ -575,9 +625,76 @@ export function PrdDocumentEditor({ docId }: { docId?: string }) {
   const [history, setHistory] = useState<string[]>([DEFAULT_DOC_HTML]);
   const [historyIndex, setHistoryIndex] = useState(0);
 
+  // Canvas and editor element references
+  const editorRef = useRef<HTMLDivElement>(null);
+  const canvasContainerRef = useRef<HTMLDivElement>(null);
+  const editorScrollContainerRef = useRef<HTMLDivElement>(null);
+
+  // Tab states: "doc" | "flow" | "database" | "designs" | "mockup"
+  const [mainTab, setMainTab] = useState<"doc" | "flow" | "database" | "designs" | "mockup">("doc");
+  const [dbViewMode, setDbViewMode] = useState<"erd" | "ddl">("erd");
+  const [currentMarkdown, setCurrentMarkdown] = useState<string>("");
+
+  // Modals
+  const [isCompletenessModalOpen, setIsCompletenessModalOpen] = useState(false);
+  const [isAuditModalOpen, setIsAuditModalOpen] = useState(false);
+  const [isCliModalOpen, setIsCliModalOpen] = useState(false);
+
+  // Compile PRD Data dynamically from markdown
+  const compiledData = React.useMemo(() => {
+    const rawMd = currentMarkdown || (typeof window !== "undefined" && editorRef.current ? richHtmlToMarkdown(editorRef.current.innerHTML) : "");
+    const effectiveTitle = docTitle || appName || "Platform Aplikasi";
+    if (!rawMd) {
+      return compilePrdFromMessages([], effectiveTitle);
+    }
+    return compilePrdFromMessages(
+      [
+        { id: "m1", role: "user", content: effectiveTitle },
+        { id: "m2", role: "model", content: rawMd },
+      ],
+      effectiveTitle
+    );
+  }, [currentMarkdown, docTitle, appName]);
+
+  const completenessResult = React.useMemo(() => {
+    return computePrdCompleteness(currentMarkdown || compiledData.readmeMarkdown);
+  }, [currentMarkdown, compiledData.readmeMarkdown]);
+
+  const securityAuditResult = React.useMemo(() => {
+    return computePrdSecurityAudit(
+      currentMarkdown || compiledData.readmeMarkdown,
+      compiledData.databaseSchemaSql
+    );
+  }, [currentMarkdown, compiledData.readmeMarkdown, compiledData.databaseSchemaSql]);
+
+  const handleDownloadLinearJira = () => {
+    const markdown = currentMarkdown || compiledData.readmeMarkdown;
+    const { csvContent } = generateLinearJiraTasks(appName || docTitle, markdown);
+    const blob = new Blob([csvContent], { type: "text/csv;charset=utf-8" });
+    const url = URL.createObjectURL(blob);
+    const link = document.createElement("a");
+    link.href = url;
+    const fileName = (appName || docTitle || "PRD_Tasks").toLowerCase().replace(/[^a-z0-9]/g, "_");
+    link.download = `${fileName}_Linear_Jira_Tasks.csv`;
+    document.body.appendChild(link);
+    link.click();
+    document.body.removeChild(link);
+    URL.revokeObjectURL(url);
+    triggerToast("📋 Tiket Sprint Linear/Jira (.csv) berhasil diunduh!");
+  };
+
+  const handlePrintPrd = () => {
+    if (typeof window !== "undefined") {
+      window.print();
+    }
+  };
+
   // AI Assistant states
   const [aiInput, setAiInput] = useState("");
   const [isAiProcessing, setIsAiProcessing] = useState(false);
+  const [priorChatMessages, setPriorChatMessages] = useState<Array<{ role: string; content: string }>>([]);
+  const [sourceSessionTitle, setSourceSessionTitle] = useState<string | null>(null);
+  const aiMessagesEndRef = useRef<HTMLDivElement>(null);
 
   // Comments state - 100% Dynamic, loaded from DB / storage, Real-time synced
   const [newCommentText, setNewCommentText] = useState("");
@@ -599,10 +716,17 @@ export function PrdDocumentEditor({ docId }: { docId?: string }) {
       id: "m0",
       sender: "ai",
       content:
-        "Halo! Saya Koda PRD Architect AI. Dokumen ini terhubung ke database cloud dan memiliki ID unik. Anda dan tim dapat mengedit bersama secara real-time. Setiap instruksi yang Anda berikan di sini akan langsung saya terapkan ke dokumen!",
+        "Halo! Saya Koda PRD Architect AI Co-Pilot. Dokumen ini terhubung langsung dengan canvas dan riwayat percakapan PRD Anda. Anda bisa berdiskusi, meminta ide fitur inovatif, mengobrol biasa, atau meminta saya langsung mengedit dan menyisipkan tabel ke dalam dokumen!",
       timestamp: "Baru saja",
     },
   ]);
+
+  // Auto-scroll AI chat to bottom on new messages
+  useEffect(() => {
+    if (activeTab === "ai") {
+      aiMessagesEndRef.current?.scrollIntoView({ behavior: "smooth" });
+    }
+  }, [aiMessages, isAiProcessing, activeTab]);
 
   // User Profile for Dynamic Presence
   const { userName, userEmail, avatarUrl } = useUserProfile();
@@ -643,9 +767,6 @@ export function PrdDocumentEditor({ docId }: { docId?: string }) {
   // Realtime Collaborators State (Only REAL online users, NO dummy data!)
   const [collaborators, setCollaborators] = useState<RealtimeCollaborator[]>([]);
 
-  const editorRef = useRef<HTMLDivElement>(null);
-  const canvasContainerRef = useRef<HTMLDivElement>(null);
-  const editorScrollContainerRef = useRef<HTMLDivElement>(null);
   const myClientIdRef = useRef<string>("");
   const activeChannelRef = useRef<any>(null);
   const isTypingRef = useRef(false);
@@ -659,12 +780,12 @@ export function PrdDocumentEditor({ docId }: { docId?: string }) {
     const myId = myClientIdRef.current;
     const myInitials = effectiveUserName
       ? effectiveUserName
-          .split(" ")
-          .filter(Boolean)
-          .map((n) => n[0])
-          .join("")
-          .slice(0, 2)
-          .toUpperCase()
+        .split(" ")
+        .filter(Boolean)
+        .map((n) => n[0])
+        .join("")
+        .slice(0, 2)
+        .toUpperCase()
       : "VK";
 
     setCollaborators((prev) => {
@@ -812,19 +933,25 @@ export function PrdDocumentEditor({ docId }: { docId?: string }) {
           if (existing.html && existing.html.trim().length > 20) {
             editorRef.current.innerHTML = existing.html;
             setHistory([existing.html]);
+            setCurrentMarkdown(existing.markdown || richHtmlToMarkdown(existing.html));
           } else if (existing.markdown) {
             const rich = markdownToRichHtml(existing.markdown);
             editorRef.current.innerHTML = rich;
             setHistory([rich]);
+            setCurrentMarkdown(existing.markdown);
           }
           const words = (editorRef.current.innerText || "").split(/\s+/).filter(Boolean).length;
           setWordCount(words);
         }
+
+        resolvePriorSession(existing.sourceSessionId, existing.sourceAppId, existing.appName || existing.title);
       } else {
         // Fallback: check koda_active_prd_doc
         let initialHtml = DEFAULT_DOC_HTML;
         let initialTitle = DEFAULT_DOC_TITLE;
         let initialApp = "E-Commerce MVP";
+        let initialSessionId: string | undefined;
+        let initialAppId: string | undefined;
 
         if (typeof window !== "undefined") {
           try {
@@ -833,8 +960,14 @@ export function PrdDocumentEditor({ docId }: { docId?: string }) {
               const parsed = JSON.parse(active);
               if (parsed.title) initialTitle = parsed.title;
               if (parsed.appName) initialApp = parsed.appName;
-              if (parsed.sourceAppId) setSourceAppId(parsed.sourceAppId);
-              if (parsed.sourceSessionId) setSourceSessionId(parsed.sourceSessionId);
+              if (parsed.sourceAppId) {
+                setSourceAppId(parsed.sourceAppId);
+                initialAppId = parsed.sourceAppId;
+              }
+              if (parsed.sourceSessionId) {
+                setSourceSessionId(parsed.sourceSessionId);
+                initialSessionId = parsed.sourceSessionId;
+              }
               if (parsed.sourceUrl) setSourceUrl(parsed.sourceUrl);
               if (parsed.comments && Array.isArray(parsed.comments)) {
                 setComments(parsed.comments);
@@ -847,7 +980,7 @@ export function PrdDocumentEditor({ docId }: { docId?: string }) {
                 initialHtml = markdownToRichHtml(parsed.markdown);
               }
             }
-          } catch {}
+          } catch { }
         }
 
         setDocTitle(initialTitle);
@@ -855,9 +988,12 @@ export function PrdDocumentEditor({ docId }: { docId?: string }) {
         if (editorRef.current) {
           editorRef.current.innerHTML = initialHtml;
           setHistory([initialHtml]);
+          setCurrentMarkdown(richHtmlToMarkdown(initialHtml));
           const words = (editorRef.current.innerText || "").split(/\s+/).filter(Boolean).length;
           setWordCount(words);
         }
+
+        resolvePriorSession(initialSessionId, initialAppId, initialApp);
 
         // Persist immediately to Supabase
         savePrdDocument({
@@ -869,6 +1005,77 @@ export function PrdDocumentEditor({ docId }: { docId?: string }) {
           updatedAt: new Date().toISOString(),
           comments: [],
         });
+      }
+    };
+
+    const resolvePriorSession = (sessId?: string, appId?: string, targetAppName?: string) => {
+      if (typeof window === "undefined") return;
+      try {
+        let matchedSession: { title?: string; messages: Array<{ role: string; content: string }> } | null = null;
+
+        // 1. Check getPrdSessions() with sessId
+        if (sessId) {
+          const s = getPrdSessionById(sessId);
+          if (s && s.messages && s.messages.length > 0) {
+            matchedSession = { title: s.title, messages: s.messages };
+          }
+        }
+
+        // 2. Check koda_saved_apps with appId
+        if (!matchedSession && appId) {
+          const rawApps = localStorage.getItem("koda_saved_apps");
+          if (rawApps) {
+            const apps = JSON.parse(rawApps);
+            const app = apps.find((a: any) => a.id === appId);
+            if (app && app.messages && app.messages.length > 0) {
+              matchedSession = { title: app.name || app.title, messages: app.messages };
+            }
+          }
+        }
+
+        // 3. Check getPrdSessions() by title or appName
+        if (!matchedSession) {
+          const allSessions = getPrdSessions();
+          if (targetAppName) {
+            const lower = targetAppName.toLowerCase();
+            const found = allSessions.find(
+              (s) =>
+                s.title?.toLowerCase().includes(lower) ||
+                s.id.toLowerCase().includes(lower)
+            );
+            if (found && found.messages && found.messages.length > 0) {
+              matchedSession = { title: found.title, messages: found.messages };
+            }
+          }
+          if (!matchedSession && allSessions.length > 0 && allSessions[0].messages?.length > 0) {
+            matchedSession = { title: allSessions[0].title, messages: allSessions[0].messages };
+          }
+        }
+
+        // 4. Check koda_saved_apps latest if still none
+        if (!matchedSession) {
+          const rawApps = localStorage.getItem("koda_saved_apps");
+          if (rawApps) {
+            const apps = JSON.parse(rawApps);
+            if (Array.isArray(apps) && apps.length > 0 && apps[0].messages?.length > 0) {
+              matchedSession = { title: apps[0].name || apps[0].title, messages: apps[0].messages };
+            }
+          }
+        }
+
+        if (matchedSession) {
+          setPriorChatMessages(
+            matchedSession.messages.map((m: any) => ({
+              role: m.role || "user",
+              content: m.content || "",
+            }))
+          );
+          if (matchedSession.title) {
+            setSourceSessionTitle(matchedSession.title);
+          }
+        }
+      } catch (err) {
+        console.warn("Failed to load prior chat session for PRD AI context:", err);
       }
     };
 
@@ -900,7 +1107,7 @@ export function PrdDocumentEditor({ docId }: { docId?: string }) {
       if (typeof window !== "undefined" && (window as any).__prd_bc) {
         try {
           (window as any).__prd_bc.postMessage({ type: "cursor_move", payload });
-        } catch {}
+        } catch { }
       }
 
       // 2. Send via Supabase Realtime Broadcast
@@ -911,7 +1118,7 @@ export function PrdDocumentEditor({ docId }: { docId?: string }) {
             event: "cursor_move",
             payload,
           });
-        } catch {}
+        } catch { }
       }
     },
     [effectiveUserName, avatarUrl]
@@ -967,16 +1174,16 @@ export function PrdDocumentEditor({ docId }: { docId?: string }) {
         prev.map((c) =>
           c.isSelf
             ? {
-                ...c,
-                currentSection: sectionName,
-                cursorPos: {
-                  x,
-                  y,
-                  sectionName,
-                  isEditing,
-                  lastActive: Date.now(),
-                },
-              }
+              ...c,
+              currentSection: sectionName,
+              cursorPos: {
+                x,
+                y,
+                sectionName,
+                isEditing,
+                lastActive: Date.now(),
+              },
+            }
             : c
         )
       );
@@ -1064,7 +1271,7 @@ export function PrdDocumentEditor({ docId }: { docId?: string }) {
       if (typeof window !== "undefined" && (window as any).__prd_bc) {
         try {
           (window as any).__prd_bc.postMessage({ type: "selection_change", payload });
-        } catch {}
+        } catch { }
       }
 
       if (activeChannelRef.current) {
@@ -1074,7 +1281,7 @@ export function PrdDocumentEditor({ docId }: { docId?: string }) {
             event: "selection_change",
             payload,
           });
-        } catch {}
+        } catch { }
       }
     };
 
@@ -1134,11 +1341,11 @@ export function PrdDocumentEditor({ docId }: { docId?: string }) {
               const next = prev.map((c) =>
                 c.id === p.commentId
                   ? {
-                      ...c,
-                      replies: c.replies?.some((r) => r.id === p.reply.id)
-                        ? c.replies
-                        : [...(c.replies || []), p.reply],
-                    }
+                    ...c,
+                    replies: c.replies?.some((r) => r.id === p.reply.id)
+                      ? c.replies
+                      : [...(c.replies || []), p.reply],
+                  }
                   : c
               );
               commentsRef.current = next;
@@ -1171,12 +1378,12 @@ export function PrdDocumentEditor({ docId }: { docId?: string }) {
               return prev.map((c) =>
                 c.id === p.id
                   ? {
-                      ...c,
-                      name: p.name || c.name,
-                      color: p.color || c.color,
-                      avatarUrl: p.avatarUrl !== undefined ? p.avatarUrl : c.avatarUrl,
-                      selection: p.selection,
-                    }
+                    ...c,
+                    name: p.name || c.name,
+                    color: p.color || c.color,
+                    avatarUrl: p.avatarUrl !== undefined ? p.avatarUrl : c.avatarUrl,
+                    selection: p.selection,
+                  }
                   : c
               );
             } else {
@@ -1219,7 +1426,7 @@ export function PrdDocumentEditor({ docId }: { docId?: string }) {
                 selection: currentSelectionRef.current,
               },
             });
-          } catch {}
+          } catch { }
         }
 
         if (type === "cursor_move" || type === "join" || type === "ping" || type === "announce") {
@@ -1229,25 +1436,25 @@ export function PrdDocumentEditor({ docId }: { docId?: string }) {
               return prev.map((c) =>
                 c.id === p.id
                   ? {
-                      ...c,
-                      name: p.name || c.name,
-                      initials: p.initials || c.initials,
-                      color: p.color || c.color,
-                      avatarUrl: p.avatarUrl !== undefined ? p.avatarUrl : c.avatarUrl,
-                      isOnline: true,
-                      currentSection: p.sectionName || c.currentSection,
-                      cursorPos:
-                        p.x !== undefined && p.y !== undefined
-                          ? {
-                              x: p.x,
-                              y: p.y,
-                              sectionName: p.sectionName || c.currentSection,
-                              isEditing: !!p.isEditing,
-                              lastActive: Date.now(),
-                            }
-                          : c.cursorPos,
-                      selection: p.selection !== undefined ? p.selection : c.selection,
-                    }
+                    ...c,
+                    name: p.name || c.name,
+                    initials: p.initials || c.initials,
+                    color: p.color || c.color,
+                    avatarUrl: p.avatarUrl !== undefined ? p.avatarUrl : c.avatarUrl,
+                    isOnline: true,
+                    currentSection: p.sectionName || c.currentSection,
+                    cursorPos:
+                      p.x !== undefined && p.y !== undefined
+                        ? {
+                          x: p.x,
+                          y: p.y,
+                          sectionName: p.sectionName || c.currentSection,
+                          isEditing: !!p.isEditing,
+                          lastActive: Date.now(),
+                        }
+                        : c.cursorPos,
+                    selection: p.selection !== undefined ? p.selection : c.selection,
+                  }
                   : c
               );
             } else {
@@ -1263,12 +1470,12 @@ export function PrdDocumentEditor({ docId }: { docId?: string }) {
                 cursorPos:
                   p.x !== undefined && p.y !== undefined
                     ? {
-                        x: p.x,
-                        y: p.y,
-                        sectionName: p.sectionName,
-                        isEditing: !!p.isEditing,
-                        lastActive: Date.now(),
-                      }
+                      x: p.x,
+                      y: p.y,
+                      sectionName: p.sectionName,
+                      isEditing: !!p.isEditing,
+                      lastActive: Date.now(),
+                    }
                     : undefined,
                 selection: p.selection || null,
               };
@@ -1307,10 +1514,10 @@ export function PrdDocumentEditor({ docId }: { docId?: string }) {
                   return prev.map((c) =>
                     c.id === p.id
                       ? {
-                          ...c,
-                          color: p.color || c.color,
-                          avatarUrl: p.avatarUrl !== undefined ? p.avatarUrl : c.avatarUrl,
-                        }
+                        ...c,
+                        color: p.color || c.color,
+                        avatarUrl: p.avatarUrl !== undefined ? p.avatarUrl : c.avatarUrl,
+                      }
                       : c
                   );
                 }
@@ -1347,12 +1554,12 @@ export function PrdDocumentEditor({ docId }: { docId?: string }) {
               return prev.map((c) =>
                 c.id === payload.id
                   ? {
-                      ...c,
-                      name: payload.name || c.name,
-                      color: payload.color || c.color,
-                      avatarUrl: payload.avatarUrl !== undefined ? payload.avatarUrl : c.avatarUrl,
-                      selection: payload.selection,
-                    }
+                    ...c,
+                    name: payload.name || c.name,
+                    color: payload.color || c.color,
+                    avatarUrl: payload.avatarUrl !== undefined ? payload.avatarUrl : c.avatarUrl,
+                    selection: payload.selection,
+                  }
                   : c
               );
             } else {
@@ -1381,22 +1588,22 @@ export function PrdDocumentEditor({ docId }: { docId?: string }) {
               return prev.map((c) =>
                 c.id === payload.id
                   ? {
-                      ...c,
-                      name: payload.name || c.name,
-                      color: payload.color || c.color,
-                      avatarUrl: payload.avatarUrl !== undefined ? payload.avatarUrl : c.avatarUrl,
-                      isOnline: true,
-                      currentSection: payload.sectionName,
-                      cursorPos: {
-                        x: payload.x,
-                        y: payload.y,
-                        sectionName: payload.sectionName,
-                        isEditing: payload.isEditing,
-                        lastActive: Date.now(),
-                      },
-                      selection:
-                        payload.selection !== undefined ? payload.selection : c.selection,
-                    }
+                    ...c,
+                    name: payload.name || c.name,
+                    color: payload.color || c.color,
+                    avatarUrl: payload.avatarUrl !== undefined ? payload.avatarUrl : c.avatarUrl,
+                    isOnline: true,
+                    currentSection: payload.sectionName,
+                    cursorPos: {
+                      x: payload.x,
+                      y: payload.y,
+                      sectionName: payload.sectionName,
+                      isEditing: payload.isEditing,
+                      lastActive: Date.now(),
+                    },
+                    selection:
+                      payload.selection !== undefined ? payload.selection : c.selection,
+                  }
                   : c
               );
             } else {
@@ -1439,11 +1646,11 @@ export function PrdDocumentEditor({ docId }: { docId?: string }) {
               const next = prev.map((c) =>
                 c.id === payload.commentId
                   ? {
-                      ...c,
-                      replies: c.replies?.some((r) => r.id === payload.reply.id)
-                        ? c.replies
-                        : [...(c.replies || []), payload.reply],
-                    }
+                    ...c,
+                    replies: c.replies?.some((r) => r.id === payload.reply.id)
+                      ? c.replies
+                      : [...(c.replies || []), payload.reply],
+                  }
                   : c
               );
               commentsRef.current = next;
@@ -1508,7 +1715,7 @@ export function PrdDocumentEditor({ docId }: { docId?: string }) {
                 onlineAt: new Date().toISOString(),
                 currentSection: "Dokumen Pembuka",
               });
-            } catch {}
+            } catch { }
           }
         });
 
@@ -1541,54 +1748,32 @@ export function PrdDocumentEditor({ docId }: { docId?: string }) {
               }
             }
           }
-        } catch {}
+        } catch { }
       }, 6000);
     }
 
-      // Handle beforeunload to notify other tabs/clients immediately when closing
-      const handleUnload = () => {
-        try {
-          bc?.postMessage({ type: "leave", payload: { id: myClientId } });
-          if (channel) {
-            channel.send({
-              type: "broadcast",
-              event: "user_leave",
-              payload: { id: myClientId },
-            });
-            channel.untrack();
-          }
-        } catch {}
-      };
-
-      window.addEventListener("beforeunload", handleUnload);
-
-      // Heartbeat ping & stale collaborator cleanup every 6 seconds
-      const heartbeatInterval = setInterval(() => {
-        try {
-          bc?.postMessage({
-            type: "ping",
-            payload: {
-              id: myClientId,
-              name: effectiveUserName,
-              initials: effectiveUserName.slice(0, 2).toUpperCase(),
-              color: myUserColorRef.current,
-              avatarUrl,
-              selection: currentSelectionRef.current,
-            },
+    // Handle beforeunload to notify other tabs/clients immediately when closing
+    const handleUnload = () => {
+      try {
+        bc?.postMessage({ type: "leave", payload: { id: myClientId } });
+        if (channel) {
+          channel.send({
+            type: "broadcast",
+            event: "user_leave",
+            payload: { id: myClientId },
           });
-        } catch {}
+          channel.untrack();
+        }
+      } catch { }
+    };
 
-        // Remove inactive peers if no ping received within 25 seconds
-        const cutoff = Date.now() - 25000;
-        setCollaborators((prev) =>
-          prev.filter((c) => c.isSelf || (c.cursorPos?.lastActive && c.cursorPos.lastActive > cutoff))
-        );
-      }, 6000);
+    window.addEventListener("beforeunload", handleUnload);
 
-      // Announce arrival to other tabs
+    // Heartbeat ping & stale collaborator cleanup every 6 seconds
+    const heartbeatInterval = setInterval(() => {
       try {
         bc?.postMessage({
-          type: "join",
+          type: "ping",
           payload: {
             id: myClientId,
             name: effectiveUserName,
@@ -1598,19 +1783,41 @@ export function PrdDocumentEditor({ docId }: { docId?: string }) {
             selection: currentSelectionRef.current,
           },
         });
-      } catch {}
+      } catch { }
 
-      return () => {
-        handleUnload();
-        window.removeEventListener("beforeunload", handleUnload);
-        clearInterval(heartbeatInterval);
-        if (bc) bc.close();
-        if (interval) clearInterval(interval);
-        if (channel && isSupabaseConfigured()) {
-          const supabase = createClient();
-          supabase.removeChannel(channel);
-        }
-      };
+      // Remove inactive peers if no ping received within 25 seconds
+      const cutoff = Date.now() - 25000;
+      setCollaborators((prev) =>
+        prev.filter((c) => c.isSelf || (c.cursorPos?.lastActive && c.cursorPos.lastActive > cutoff))
+      );
+    }, 6000);
+
+    // Announce arrival to other tabs
+    try {
+      bc?.postMessage({
+        type: "join",
+        payload: {
+          id: myClientId,
+          name: effectiveUserName,
+          initials: effectiveUserName.slice(0, 2).toUpperCase(),
+          color: myUserColorRef.current,
+          avatarUrl,
+          selection: currentSelectionRef.current,
+        },
+      });
+    } catch { }
+
+    return () => {
+      handleUnload();
+      window.removeEventListener("beforeunload", handleUnload);
+      clearInterval(heartbeatInterval);
+      if (bc) bc.close();
+      if (interval) clearInterval(interval);
+      if (channel && isSupabaseConfigured()) {
+        const supabase = createClient();
+        supabase.removeChannel(channel);
+      }
+    };
   }, [currentDocId, effectiveUserName, avatarUrl]);
 
   // Handle typing inside WYSIWYG editor
@@ -1619,6 +1826,7 @@ export function PrdDocumentEditor({ docId }: { docId?: string }) {
     isTypingRef.current = true;
     const currentHtml = editorRef.current.innerHTML;
     setIsSaved(false);
+    setCurrentMarkdown(richHtmlToMarkdown(currentHtml));
 
     // Update word count
     const words = (editorRef.current.innerText || "").split(/\s+/).filter(Boolean).length;
@@ -1723,13 +1931,17 @@ export function PrdDocumentEditor({ docId }: { docId?: string }) {
   const applyAiDirectEdit = (
     actionName: string,
     htmlSnippet: string,
-    aiExplanation: string
+    aiExplanation?: string,
+    addChatMessage: boolean = false
   ) => {
     if (!editorRef.current) return;
     setIsAiProcessing(true);
 
     setTimeout(() => {
-      if (!editorRef.current) return;
+      if (!editorRef.current) {
+        setIsAiProcessing(false);
+        return;
+      }
 
       const wrapperId = "ai_applied_" + Date.now();
       const wrappedSnippet = `<div id="${wrapperId}" class="transition-all duration-700 ring-2 ring-[#408175] bg-[#408175]/10 rounded-xl p-3 my-4 animate-in fade-in">${htmlSnippet}</div>`;
@@ -1750,168 +1962,196 @@ export function PrdDocumentEditor({ docId }: { docId?: string }) {
       handleEditorInput();
       setIsAiProcessing(false);
 
-      // Add to AI chat thread
+      if (addChatMessage) {
+        const aiMsg: AiChatMessage = {
+          id: "ai_" + Date.now(),
+          sender: "ai",
+          content: `⚡ Selesai! Saya telah langsung memperbarui dokumen PRD: ${aiExplanation || actionName}. Data otomatis tersimpan di database untuk seluruh anggota tim.`,
+          appliedAction: actionName,
+          timestamp: "Baru saja",
+          isApplied: true,
+        };
+        setAiMessages((prev) => [...prev, aiMsg]);
+      }
+
+      triggerToast(`✨ Real-time edit diterapkan: ${actionName}`);
+    }, 300);
+  };
+
+  // Helper to extract ```prd-direct-edit JSON payload from AI text response
+  const extractPrdDirectEdit = (rawText: string): {
+    cleanText: string;
+    editPayload: PrdDirectEditPayload | null;
+  } => {
+    const blockRegex = /```(?:prd-direct-edit|json)?\s*(\{[\s\S]*?"html"[\s\S]*?\})\s*```/i;
+    const match = rawText.match(blockRegex);
+    if (!match) {
+      const fallbackRegex = /```prd-direct-edit\s*([\s\S]*?)(?:```|$)/i;
+      const fallbackMatch = rawText.match(fallbackRegex);
+      if (fallbackMatch) {
+        try {
+          const parsed: PrdDirectEditPayload = JSON.parse(fallbackMatch[1].trim());
+          const cleanText = rawText.replace(fallbackRegex, "").trim();
+          return { cleanText, editPayload: parsed };
+        } catch { }
+      }
+      return { cleanText: rawText, editPayload: null };
+    }
+
+    try {
+      const jsonStr = match[1].trim();
+      const parsed: PrdDirectEditPayload = JSON.parse(jsonStr);
+      const cleanText = rawText.replace(blockRegex, "").trim();
+      return { cleanText, editPayload: parsed };
+    } catch (err) {
+      console.error("Failed to parse prd-direct-edit block:", err);
+      return { cleanText: rawText.replace(blockRegex, "").trim(), editPayload: null };
+    }
+  };
+
+  // Natural AI Chat & Direct Document Co-Pilot
+  const handleSendAiMessage = async (
+    promptText: string,
+    forceAutoApply: boolean = false
+  ) => {
+    const cleanPrompt = promptText.trim();
+    if (!cleanPrompt || isAiProcessing) return;
+
+    setActiveTab("ai");
+    setAiInput("");
+    setIsAiProcessing(true);
+
+    // Append user message immediately
+    const userMsg: AiChatMessage = {
+      id: "u_" + Date.now(),
+      sender: "user",
+      content: cleanPrompt,
+      timestamp: "Baru saja",
+    };
+    setAiMessages((prev) => [...prev, userMsg]);
+
+    try {
+      // Live document text from WYSIWYG editor
+      const liveDocText = editorRef.current
+        ? richHtmlToMarkdown(editorRef.current.innerHTML)
+        : currentMarkdown;
+
+      // History of current editor chat session (skip local initial welcome greeting m0)
+      const historyPayload = [
+        ...aiMessages
+          .filter((m) => m.id !== "m0")
+          .map((m) => ({
+            role: m.sender === "user" ? ("user" as const) : ("model" as const),
+            content: m.content,
+          })),
+        { role: "user" as const, content: cleanPrompt },
+      ];
+
+      const res = await fetch("/api/chat", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          toolId: "prd_editor",
+          messages: historyPayload,
+          documentContext: liveDocText,
+          sourceSessionMessages: priorChatMessages.slice(-10),
+        }),
+      });
+
+      if (!res.ok) {
+        throw new Error("HTTP error " + res.status);
+      }
+
+      const data = await res.json();
+      const rawAiText =
+        data.content ||
+        data.text ||
+        "Maaf, respon AI kosong. Silakan ulangi pertanyaan atau instruksi Anda.";
+
+      const { cleanText, editPayload } = extractPrdDirectEdit(rawAiText);
+
+      // Check for user edit intent or explicit flag
+      const isEditIntent =
+        forceAutoApply ||
+        /\b(tambah|tambahkan|ubah|ganti|edit|update|perbarui|masukkan|sisipkan|tuliskan|buatkan|generate|cantumkan)\b/i.test(
+          cleanPrompt
+        );
+
+      let appliedActionText: string | undefined = undefined;
+
+      if (editPayload && editPayload.html && isEditIntent) {
+        applyAiDirectEdit(
+          editPayload.sectionTitle || editPayload.summary || "Pembaruan Dokumen PRD",
+          editPayload.html,
+          editPayload.summary || "Perubahan langsung diterapkan ke dokumen"
+        );
+        appliedActionText =
+          editPayload.sectionTitle || editPayload.summary || "Pembaruan PRD";
+      }
+
       const aiMsg: AiChatMessage = {
         id: "ai_" + Date.now(),
         sender: "ai",
-        content: `⚡ Selesai! Saya telah langsung memperbarui dokumen PRD: ${aiExplanation}. Data otomatis tersimpan di database untuk seluruh anggota tim.`,
-        appliedAction: actionName,
+        content:
+          cleanText ||
+          (editPayload
+            ? `Saya telah menyusun rancangan spesifikasi **${
+                editPayload.sectionTitle || "Dokumen PRD"
+              }** yang siap diterapkan ke dokumen Anda.`
+            : rawAiText),
+        appliedAction: appliedActionText,
+        timestamp: "Baru saja",
+        editPayload: editPayload,
+        isApplied: Boolean(appliedActionText),
+      };
+
+      setAiMessages((prev) => [...prev, aiMsg]);
+    } catch (err) {
+      console.error("AI Chat error:", err);
+      const fallbackMsg: AiChatMessage = {
+        id: "ai_err_" + Date.now(),
+        sender: "ai",
+        content:
+          "Mohon maaf, terjadi kendala saat memproses instruksi. Pastikan koneksi stabil atau coba instruksi kembali sesaat lagi.",
         timestamp: "Baru saja",
       };
-      setAiMessages((prev) => [...prev, aiMsg]);
-
-      triggerToast(`✨ Real-time edit diterapkan: ${actionName}`);
-    }, 600);
+      setAiMessages((prev) => [...prev, fallbackMsg]);
+      triggerToast("Gagal memproses pesan AI. Silakan coba lagi.");
+    } finally {
+      setIsAiProcessing(false);
+    }
   };
 
-  // Quick Action Chips Trigger
+  const handleTriggerAiCompletion = (promptText: string) => {
+    handleSendAiMessage(promptText, true);
+  };
+
+  // Quick Action Chips Trigger - Real AI with live document & prior chat context
   const handleQuickAiAction = (type: string) => {
     if (type === "moscow") {
-      const snippet = `
-<h2 class="text-xl font-bold text-white mt-6 mb-3 border-b border-[#241f1f] pb-2">Matriks Prioritas Fitur (MoSCoW Framework)</h2>
-<div class="my-4 overflow-x-auto rounded-xl border border-[#241f1f] shadow-sm">
-  <table class="w-full text-left text-xs sm:text-sm border-collapse">
-    <thead class="bg-[#1a1616] text-white border-b border-[#241f1f]">
-      <tr>
-        <th class="p-3 font-semibold text-white">Kategori</th>
-        <th class="p-3 font-semibold text-white">Fitur & Kebutuhan</th>
-        <th class="p-3 font-semibold text-white">Justifikasi Bisnis & Teknis</th>
-      </tr>
-    </thead>
-    <tbody class="divide-y divide-[#241f1f] bg-[#120f0f]">
-      <tr>
-        <td class="p-3 text-emerald-400 font-bold">Must Have (P0)</td>
-        <td class="p-3 text-[#f1f3f4]">Katalog produk responsif & keranjang belanja</td>
-        <td class="p-3 text-[#9aa0a6]">Pilar esensial agar transaksi e-commerce dapat terjadi</td>
-      </tr>
-      <tr>
-        <td class="p-3 text-emerald-400 font-bold">Must Have (P0)</td>
-        <td class="p-3 text-[#f1f3f4]">Form checkout & unggah bukti transfer perbankan</td>
-        <td class="p-3 text-[#9aa0a6]">Metode bayar tervalidasi untuk UMKM tanpa biaya gateway</td>
-      </tr>
-      <tr>
-        <td class="p-3 text-blue-400 font-bold">Should Have (P1)</td>
-        <td class="p-3 text-[#f1f3f4]">Dashboard verifikasi pesanan & unduh laporan PDF</td>
-        <td class="p-3 text-[#9aa0a6]">Memudahkan rekapitulasi harian bagi pemilik bisnis</td>
-      </tr>
-      <tr>
-        <td class="p-3 text-purple-400 font-bold">Could Have (P2)</td>
-        <td class="p-3 text-[#f1f3f4]">Integrasi cek ongkos kirim otomatis (RajaOngkir)</td>
-        <td class="p-3 text-[#9aa0a6]">Peningkatan kenyamanan checkout pelanggan antarkota</td>
-      </tr>
-      <tr>
-        <td class="p-3 text-rose-400 font-bold">Won't Have (P3)</td>
-        <td class="p-3 text-[#f1f3f4]">Multi-vendor marketplace & split balance escrow</td>
-        <td class="p-3 text-[#9aa0a6]">Ditunda ke rilis Fase 2 setelah MVP tervalidasi pasar</td>
-      </tr>
-    </tbody>
-  </table>
-</div>
-`;
-      applyAiDirectEdit(
-        "Tabel Matriks MoSCoW",
-        snippet,
-        "Menambahkan tabel matriks prioritas MoSCoW lengkap dengan justifikasi bisnis."
+      handleSendAiMessage(
+        "Tolong analisis dan buatkan Matriks Prioritas Fitur MoSCoW Framework (Must Have, Should Have, Could Have, Won't Have) yang mendalam dan relevan khusus untuk produk di PRD ini, lengkap dengan justifikasi teknis & bisnis, lalu langsung terapkan ke dokumen.",
+        true
       );
     } else if (type === "security") {
-      const snippet = `
-<h2 class="text-xl font-bold text-white mt-6 mb-3 border-b border-[#241f1f] pb-2">Spesifikasi Keamanan & Pencegahan Fraud</h2>
-<ul class="list-disc pl-6 space-y-2 my-3 text-[#dcdcdc]">
-  <li><strong class="text-white">Validasi Bukti Pembayaran:</strong> Berkas gambar struk transfer dibatasi maksimum 3 MB, hanya format JPEG/PNG/WebP, dan dipindai secara otomatis.</li>
-  <li><strong class="text-white">Idempotency Checkout:</strong> Setiap transaksi checkout menghasilkan token UUID v7 unik untuk mencegah double-order akibat klik ganda pelanggan.</li>
-  <li><strong class="text-white">Rate Limiting & Anti-Spam:</strong> Maksimal 5 permintaan checkout per menit per alamat IP untuk mencegah bot order palsu.</li>
-  <li><strong class="text-white">Otorisasi Panel Admin:</strong> Autentikasi berbasis session token terenkripsi HTTPS dengan auto-logout setelah 60 menit inaktif.</li>
-</ul>
-`;
-      applyAiDirectEdit(
-        "Spesifikasi Keamanan & Anti-Fraud",
-        snippet,
-        "Menambahkan bab spesifikasi keamanan, sanitasi berkas bukti bayar, dan proteksi transaksi."
+      handleSendAiMessage(
+        "Tolong lakukan audit keamanan dan tambahkan Bab Spesifikasi Keamanan, Proteksi Transaksi, Validasi Input, dan Mitigasi OWASP Top 10 khusus untuk sistem dalam PRD ini, lalu langsung terapkan ke dokumen.",
+        true
       );
     } else if (type === "gherkin") {
-      const snippet = `
-<h2 class="text-xl font-bold text-white mt-6 mb-3 border-b border-[#241f1f] pb-2">Kriteria Penerimaan (Acceptance Criteria - Gherkin)</h2>
-
-<h3 class="text-lg font-bold text-[#f1f3f4] mt-3 mb-1.5">Skenario 1: Pelanggan Menyelesaikan Checkout dengan Sukses</h3>
-<blockquote class="border-l-4 border-[#408175] pl-4 py-1.5 my-2 italic text-[#c4c7c5] bg-[#141111]/40 rounded-r-lg">
-  <strong>Given:</strong> Pelanggan memiliki minimal 1 produk di dalam keranjang belanja<br />
-  <strong>When:</strong> Pelanggan mengisi nama, nomor WhatsApp, alamat pengiriman, dan memilih "Transfer BCA"<br />
-  <strong>And:</strong> Mengunggah berkas foto bukti bayar yang valid lalu menekan "Konfirmasi Pesanan"<br />
-  <strong>Then:</strong> Sistem mencatat status pesanan sebagai "Menunggu Verifikasi"<br />
-  <strong>And:</strong> Menampilkan halaman invoice dengan nomor pesanan unik dan tombol pintas WhatsApp penjual
-</blockquote>
-`;
-      applyAiDirectEdit(
-        "Acceptance Criteria Gherkin",
-        snippet,
-        "Menambahkan kriteria penerimaan terstandar format Gherkin untuk memandu QA dan Engineering."
+      handleSendAiMessage(
+        "Tolong buatkan Kriteria Penerimaan (Acceptance Criteria) terstandar dalam format Gherkin (Given-When-Then) untuk alur transaksi utama dalam PRD ini, lalu langsung terapkan ke dokumen.",
+        true
       );
     } else if (type === "sprint") {
-      const snippet = `
-<h2 class="text-xl font-bold text-white mt-6 mb-3 border-b border-[#241f1f] pb-2">Jadwal Rilis & Milestone Sprint (4 Minggu MVP)</h2>
-<div class="my-4 overflow-x-auto rounded-xl border border-[#241f1f] shadow-sm">
-  <table class="w-full text-left text-xs sm:text-sm border-collapse">
-    <thead class="bg-[#1a1616] text-white border-b border-[#241f1f]">
-      <tr>
-        <th class="p-3 font-semibold text-white">Sprint</th>
-        <th class="p-3 font-semibold text-white">Durasi</th>
-        <th class="p-3 font-semibold text-white">Sasaran Utama (Deliverables)</th>
-        <th class="p-3 font-semibold text-white">Status</th>
-      </tr>
-    </thead>
-    <tbody class="divide-y divide-[#241f1f] bg-[#120f0f]">
-      <tr>
-        <td class="p-3 font-bold text-white">Sprint 1</td>
-        <td class="p-3 text-[#9aa0a6]">Minggu 1</td>
-        <td class="p-3 text-[#dcdcdc]">Setup skema PostgreSQL, katalog produk, dan UI responsif tema Warm Earthy</td>
-        <td class="p-3 text-emerald-400 font-semibold">Tuntas</td>
-      </tr>
-      <tr>
-        <td class="p-3 font-bold text-white">Sprint 2</td>
-        <td class="p-3 text-[#9aa0a6]">Minggu 2</td>
-        <td class="p-3 text-[#dcdcdc]">Modul keranjang belanja, form checkout, dan upload bukti transfer</td>
-        <td class="p-3 text-blue-400 font-semibold">Dalam Pengerjaan</td>
-      </tr>
-    </tbody>
-  </table>
-</div>
-`;
-      applyAiDirectEdit(
-        "Milestone Sprint Planning",
-        snippet,
-        "Menyisipkan tabel timeline sprint 4-mingguan lengkap dengan deliverables terukur."
+      handleSendAiMessage(
+        "Tolong buatkan Jadwal Rilis & Milestone Sprint (Sprint 1 sampai Sprint 4) terperinci dengan target deliverables teknis yang terukur untuk MVP dalam PRD ini, lalu langsung terapkan ke dokumen.",
+        true
       );
-    } else {
-      const snippet = `
-<h2 class="text-xl font-bold text-white mt-6 mb-3 border-b border-[#241f1f] pb-2">Spesifikasi Skema Database Relasional (PostgreSQL)</h2>
-<div class="my-4 overflow-x-auto rounded-xl border border-[#241f1f] shadow-sm">
-  <table class="w-full text-left text-xs sm:text-sm border-collapse">
-    <thead class="bg-[#1a1616] text-white border-b border-[#241f1f]">
-      <tr>
-        <th class="p-3 font-semibold text-white">Nama Tabel</th>
-        <th class="p-3 font-semibold text-white">Kolom Kunci & Tipe Data</th>
-        <th class="p-3 font-semibold text-white">Relasi & Constraint</th>
-      </tr>
-    </thead>
-    <tbody class="divide-y divide-[#241f1f] bg-[#120f0f]">
-      <tr>
-        <td class="p-3 font-mono text-emerald-400">products</td>
-        <td class="p-3 text-[#dcdcdc]">id (UUID), name (VARCHAR), price (NUMERIC), stock (INT), images (TEXT[])</td>
-        <td class="p-3 text-[#9aa0a6]">PRIMARY KEY (id), CHECK (price &gt;= 0)</td>
-      </tr>
-      <tr>
-        <td class="p-3 font-mono text-emerald-400">orders</td>
-        <td class="p-3 text-[#dcdcdc]">id (UUID), customer_name (VARCHAR), total_amount (NUMERIC), status (ENUM)</td>
-        <td class="p-3 text-[#9aa0a6]">status in ('pending', 'paid', 'shipped', 'cancelled')</td>
-      </tr>
-    </tbody>
-  </table>
-</div>
-`;
-      applyAiDirectEdit(
-        "Skema Database Relasional",
-        snippet,
-        "Menambahkan tabel spesifikasi basis data PostgreSQL dengan constraint integritas relasional."
+    } else if (type === "database") {
+      handleSendAiMessage(
+        "Tolong susun tabel Skema Basis Data Relasional (PostgreSQL) lengkap dengan daftar tabel, nama kolom, tipe data, Primary Key, Foreign Key, dan constraint integritas data untuk PRD ini, lalu langsung terapkan ke dokumen.",
+        true
       );
     }
   };
@@ -1919,63 +2159,8 @@ export function PrdDocumentEditor({ docId }: { docId?: string }) {
   // Custom AI Prompt Submit
   const handleCustomAiSubmit = (e: React.FormEvent) => {
     e.preventDefault();
-    if (!aiInput.trim()) return;
-
-    const userPrompt = aiInput.trim();
-    setAiInput("");
-
-    // Append user message
-    const userMsg: AiChatMessage = {
-      id: "u_" + Date.now(),
-      sender: "user",
-      content: userPrompt,
-      timestamp: "Baru saja",
-    };
-    setAiMessages((prev) => [...prev, userMsg]);
-
-    let title = "Tambahan: " + userPrompt.slice(0, 30);
-    let htmlContent = `
-<h2 class="text-xl font-bold text-white mt-6 mb-3 border-b border-[#241f1f] pb-2">Bagian PRD: ${userPrompt}</h2>
-<p class="my-2.5 leading-relaxed text-[#dcdcdc]">
-Berdasarkan permintaan Anda, bagian ini telah diperbarui untuk mencakup kebutuhan operasional dan teknis secara terperinci:
-</p>
-<ul class="list-disc pl-6 space-y-1.5 my-3 text-[#dcdcdc]">
-  <li><strong class="text-white">Implementasi:</strong> ${userPrompt}</li>
-  <li><strong class="text-white">Standar Sistem:</strong> Mematuhi arsitektur standar industri dengan jaminan performa responsif &lt; 200ms.</li>
-  <li><strong class="text-white">Penanganan Edge Case:</strong> Otomatis melakukan fallback jika service eksternal mengalami timeout atau gangguan koneksi.</li>
-</ul>
-`;
-
-    if (userPrompt.toLowerCase().includes("tabel") || userPrompt.toLowerCase().includes("table")) {
-      htmlContent = `
-<h2 class="text-xl font-bold text-white mt-6 mb-3 border-b border-[#241f1f] pb-2">Tabel Spesifikasi: ${userPrompt}</h2>
-<div class="my-4 overflow-x-auto rounded-xl border border-[#241f1f] shadow-sm">
-  <table class="w-full text-left text-xs sm:text-sm border-collapse">
-    <thead class="bg-[#1a1616] text-white border-b border-[#241f1f]">
-      <tr>
-        <th class="p-3 font-semibold text-white">Parameter</th>
-        <th class="p-3 font-semibold text-white">Deskripsi Kebutuhan</th>
-        <th class="p-3 font-semibold text-white">Standar Validasi</th>
-      </tr>
-    </thead>
-    <tbody class="divide-y divide-[#241f1f] bg-[#120f0f]">
-      <tr>
-        <td class="p-3 font-semibold text-white">Kebutuhan Fungsional</td>
-        <td class="p-3 text-[#dcdcdc]">${userPrompt}</td>
-        <td class="p-3 text-[#408175]">Lolos Uji Acceptance Test</td>
-      </tr>
-      <tr>
-        <td class="p-3 font-semibold text-white">Penanganan Kegagalan</td>
-        <td class="p-3 text-[#dcdcdc]">Pesan error interaktif dengan instruksi perbaikan</td>
-        <td class="p-3 text-[#9aa0a6]">HTTP 422 / 400 Bad Request</td>
-      </tr>
-    </tbody>
-  </table>
-</div>
-`;
-    }
-
-    applyAiDirectEdit(title, htmlContent, `menambahkan bagian '${userPrompt}' langsung ke dokumen.`);
+    if (!aiInput.trim() || isAiProcessing) return;
+    handleSendAiMessage(aiInput);
   };
 
   // Copy document markdown
@@ -1987,7 +2172,7 @@ Berdasarkan permintaan Anda, bagian ini telah diperbarui untuk mencakup kebutuha
       setCopiedDoc(true);
       triggerToast("✅ Seluruh PRD tersalin sebagai Markdown!");
       setTimeout(() => setCopiedDoc(false), 2500);
-    } catch {}
+    } catch { }
   };
 
   // Share Team Link (Copies full unique URL)
@@ -1999,7 +2184,7 @@ Berdasarkan permintaan Anda, bagian ini telah diperbarui untuk mencakup kebutuha
       setCopiedLink(true);
       triggerToast("📋 Link tim berhasil disalin! Bagikan URL ini agar tim Anda dapat mengedit bersama.");
       setTimeout(() => setCopiedLink(false), 3000);
-    } catch {}
+    } catch { }
   };
 
   // Download .md file
@@ -2051,7 +2236,7 @@ Berdasarkan permintaan Anda, bagian ini telah diperbarui untuk mencakup kebutuha
       if (typeof window !== "undefined" && (window as any).__prd_bc) {
         try {
           (window as any).__prd_bc.postMessage({ type: "comment_event", payload });
-        } catch {}
+        } catch { }
       }
 
       if (activeChannelRef.current) {
@@ -2061,7 +2246,7 @@ Berdasarkan permintaan Anda, bagian ini telah diperbarui untuk mencakup kebutuha
             event: "comment_event",
             payload,
           });
-        } catch {}
+        } catch { }
       }
     },
     []
@@ -2074,11 +2259,11 @@ Berdasarkan permintaan Anda, bagian ini telah diperbarui untuk mencakup kebutuha
 
     const userInitial = effectiveUserName
       ? effectiveUserName
-          .split(" ")
-          .map((n) => n[0])
-          .slice(0, 2)
-          .join("")
-          .toUpperCase()
+        .split(" ")
+        .map((n) => n[0])
+        .slice(0, 2)
+        .join("")
+        .toUpperCase()
       : "U";
 
     const newComment: PrdComment = {
@@ -2116,11 +2301,11 @@ Berdasarkan permintaan Anda, bagian ini telah diperbarui untuk mencakup kebutuha
 
     const userInitial = effectiveUserName
       ? effectiveUserName
-          .split(" ")
-          .map((n) => n[0])
-          .slice(0, 2)
-          .join("")
-          .toUpperCase()
+        .split(" ")
+        .map((n) => n[0])
+        .slice(0, 2)
+        .join("")
+        .toUpperCase()
       : "U";
 
     const newReply: PrdCommentReply = {
@@ -2312,17 +2497,13 @@ ${docPlainText}`,
         {/* Left: Window Controls + Back to Chat + Editable Title + Unique ID */}
         <div className="flex items-center gap-2 sm:gap-3 min-w-0">
           {/* macOS 🔴 🟡 🟢 Traffic Lights */}
-          <div className="flex items-center gap-1.5 shrink-0 pr-1">
-            <span className="w-3 h-3 rounded-full bg-[#ff5f56] inline-block shadow-inner" />
-            <span className="w-3 h-3 rounded-full bg-[#ffbd2e] inline-block shadow-inner" />
-            <span className="w-3 h-3 rounded-full bg-[#27c93f] inline-block shadow-inner" />
-          </div>
+
 
           {/* Button: Kembali ke Chat PRD */}
           <button
             type="button"
             onClick={handleBackToChat}
-            className="px-2.5 py-1 rounded-lg bg-[#141111] hover:bg-[#1a1616] border border-[#241f1f] text-[#f1f3f4] hover:text-white text-xs font-medium flex items-center gap-1.5 transition cursor-pointer"
+            className="px-3.5 py-2 rounded-lg bg-[#141111] hover:bg-[#1a1616] text-[#f1f3f4] hover:text-white text-xs font-medium flex items-center gap-1.5 transition cursor-pointer"
             title="Kembali ke ruang obrolan AI dengan perubahan yang telah tersimpan otomatis"
           >
             <ArrowLeft className="w-3.5 h-3.5 text-[#408175]" />
@@ -2331,10 +2512,6 @@ ${docPlainText}`,
 
           {/* Document Logo & Editable Title */}
           <div className="flex items-center gap-2 min-w-0">
-            <div className="w-6 h-6 rounded-md bg-gradient-to-tr from-[#2E4540] to-[#408175] flex items-center justify-center text-white shrink-0 shadow-sm">
-              <FileText className="w-3.5 h-3.5 text-white" />
-            </div>
-
             <input
               type="text"
               value={docTitle}
@@ -2351,53 +2528,16 @@ ${docPlainText}`,
           </div>
 
           {/* Unique Document ID Pill */}
-          {currentDocId && (
-            <div
-              className="hidden lg:flex items-center gap-1 px-2 py-0.5 rounded-md bg-[#161313] border border-[#241f1f] text-[10px] font-mono text-[#80868b] hover:text-[#408175] cursor-pointer transition select-all"
-              onClick={handleShareTeamLink}
-              title="Klik untuk menyalin link dokumen unik"
-            >
-              <span>ID:</span>
-              <span className="text-[#408175] font-semibold">{currentDocId}</span>
-            </div>
-          )}
+
         </div>
 
         {/* Right: Database Status + Share Team Link + Actions */}
         <div className="flex items-center gap-2 sm:gap-2.5 shrink-0">
           {/* Database Connected Status Badge */}
-          <div
-            className="flex items-center gap-1.5 text-[11px] text-[#9aa0a6] px-2 py-1 rounded-md bg-[#141111] border border-[#241f1f]"
-            title="Dokumen tersimpan di Supabase Cloud Database dan tersinkronisasi untuk seluruh tim"
-          >
-            <Cloud className="w-3 h-3 text-[#408175]" />
-            <span className="text-emerald-400 font-medium hidden sm:inline">Database Live</span>
-            {lastRemoteSync && (
-              <span className="text-[10px] text-[#80868b] hidden md:inline">
-                ({lastRemoteSync})
-              </span>
-            )}
-          </div>
+
 
           {/* Share Team Link Button (Primary Collaboration Action) */}
-          <button
-            type="button"
-            onClick={handleShareTeamLink}
-            className="px-2.5 py-1 rounded-lg bg-[#2E4540]/40 hover:bg-[#2E4540]/70 border border-[#408175]/40 text-[#408175] hover:text-[#7ae2d0] text-xs font-semibold flex items-center gap-1.5 transition cursor-pointer shadow-sm active:scale-95"
-            title="Salin URL lengkap dokumen ini untuk dibagikan ke tim agar bisa mengedit bersama"
-          >
-            {copiedLink ? (
-              <>
-                <Check className="w-3.5 h-3.5 text-emerald-400" />
-                <span className="text-emerald-400">Link Tersalin!</span>
-              </>
-            ) : (
-              <>
-                <Share2 className="w-3.5 h-3.5" />
-                <span>Bagikan ke Tim</span>
-              </>
-            )}
-          </button>
+
 
           {/* Dynamic Online Collaborator Avatars */}
           <div className="flex items-center -space-x-1.5 shrink-0 pl-1">
@@ -2410,11 +2550,10 @@ ${docPlainText}`,
               >
                 {/* Avatar Circle */}
                 <div
-                  className={`w-6 h-6 rounded-full text-white font-bold text-[10px] flex items-center justify-center border-2 border-[#0B0909] shadow-sm transition-all group-hover:scale-125 group-hover:z-30 relative ${
-                    c.isAi
+                  className={`w-6 h-6 rounded-full text-white font-bold text-[10px] flex items-center justify-center border-2 border-[#0B0909] shadow-sm transition-all group-hover:scale-125 group-hover:z-30 relative ${c.isAi
                       ? "bg-gradient-to-tr from-[#2E4540] via-[#408175] to-[#B5B9F0]"
                       : ""
-                  }`}
+                    }`}
                   style={!c.isAi ? { backgroundColor: c.color, boxShadow: `0 0 0 2px ${c.color}` } : {}}
                 >
                   {c.isAi ? (
@@ -2473,7 +2612,7 @@ ${docPlainText}`,
                       )}
                     </div>
                     <div className="text-[9px] text-[#737373] text-center pt-0.5 border-t border-[#241f1f] mt-1">
-                      Klik untuk lompat ke kursor 📍
+                      Klik untuk lompat ke kursor
                     </div>
                   </div>
                 </div>
@@ -2481,11 +2620,55 @@ ${docPlainText}`,
             ))}
           </div>
 
+          {/* 13-Bab Completeness Gauge */}
+          <button
+            type="button"
+            onClick={handleShareTeamLink}
+            className="px-3.5 py-2 rounded-lg bg-[#2E4540]/40 hover:bg-[#2E4540]/70 border border-[#408175]/40 text-[#408175] hover:text-[#7ae2d0] text-xs font-semibold flex items-center gap-1.5 transition cursor-pointer shadow-sm active:scale-95"
+            title="Salin URL lengkap dokumen ini untuk dibagikan ke tim agar bisa mengedit bersama"
+          >
+            {copiedLink ? (
+              <>
+                <Check className="w-3.5 h-3.5 text-emerald-400" />
+                <span className="text-emerald-400">Link Tersalin!</span>
+              </>
+            ) : (
+              <>
+                <Share2 className="w-3.5 h-3.5" />
+                <span>Bagikan ke Tim</span>
+              </>
+            )}
+          </button>
+          {/* Pre-production Security & Architecture Audit */}
+
+
+          {/* Connect to Koda CLI Button */}
+          <button
+            type="button"
+            onClick={() => setIsCliModalOpen(true)}
+            className="px-3.5 py-2 rounded-lg bg-[#1f1f1f] hover:bg-[#171717] text-[#FAF6F4] text-xs font-semibold transition flex items-center gap-1.5 cursor-pointer"
+            title="Hubungkan ke Coding Agent CLI di Terminal"
+          >
+            <Terminal className="w-3.5 h-3.5 text-[#ffffff]" />
+            <span className="hidden sm:inline">Koda CLI</span>
+          </button>
+
+          {/* Linear / Jira Tasks CSV Export */}
+          <button
+            type="button"
+            onClick={handleDownloadLinearJira}
+            className="px-3.5 py-2 rounded-lg bg-[#141111] hover:bg-[#1a1616] text-[#C4B2AC] hover:text-white text-xs font-medium transition flex items-center gap-1.5 border border-[#241f1f] cursor-pointer"
+            title="Unduh Tiket Sprint Linear / Jira (.csv)"
+          >
+            <FileSpreadsheet className="w-3.5 h-3.5" />
+            <span className="hidden lg:inline">Linear/Jira CSV</span>
+          </button>
+
           {/* Action: Copy Markdown */}
           <button
             type="button"
             onClick={handleCopyMarkdown}
-            className="p-1.5 sm:px-2.5 sm:py-1 rounded-lg bg-[#141111] hover:bg-[#1a1616] text-[#dcdcdc] hover:text-white border border-[#241f1f] text-xs font-medium flex items-center gap-1.5 transition cursor-pointer"
+            className="p-2 sm:px-2.5 sm:py-2 rounded-lg bg-[#141111] hover:bg-[#1a1616] text-[#dcdcdc] hover:text-white border border-[#241f1f] text-xs font-medium flex items-center gap-1.5 transition cursor-pointer"
             title="Salin isi dokumen sebagai format Markdown standar"
           >
             {copiedDoc ? (
@@ -2500,7 +2683,7 @@ ${docPlainText}`,
           <button
             type="button"
             onClick={handleDownloadMd}
-            className="px-2.5 sm:px-3 py-1 rounded-lg bg-[#408175] hover:bg-[#4ea092] text-white text-xs font-semibold flex items-center gap-1.5 shadow-md shadow-[#408175]/20 transition cursor-pointer"
+            className="px-2.5 sm:px-3 py-2 rounded-lg bg-[#408175] hover:bg-[#4ea092] text-white text-xs font-semibold flex items-center gap-1.5 shadow-md shadow-[#408175]/20 transition cursor-pointer"
             title="Unduh Berkas Markdown PRD"
           >
             <Download className="w-3.5 h-3.5" />
@@ -2514,321 +2697,527 @@ ${docPlainText}`,
       {/* ==================================================================== */}
       <div className="flex-1 flex flex-col md:flex-row overflow-hidden min-h-0">
         {/* ================================================================== */}
-        {/* LEFT PANE: WYSIWYG Rich Document Editor (No raw markdown!)         */}
+        {/* LEFT PANE: Unified Workspace (Editor, Flowchart, ERD, Mockups)      */}
         {/* ================================================================== */}
         <div className="flex-1 flex flex-col border-r border-[#241f1f] bg-[#0B0909] overflow-hidden min-h-0">
-          {/* Docs Formatting Toolbar (WYSIWYG Commands) */}
-          <div className="h-10 border-b border-[#241f1f] bg-[#141111] px-3 flex items-center justify-between shrink-0 text-xs overflow-x-auto no-scrollbar">
+          {/* Left Pane Unified 5-Tab Bar */}
+          <div className="h-11 border-b border-[#241f1f] bg-[#0B0909] px-3 flex items-center justify-between shrink-0 gap-2 overflow-x-auto no-scrollbar">
             <div className="flex items-center gap-1 shrink-0">
-              {/* Undo / Redo */}
               <button
                 type="button"
-                onClick={handleUndo}
-                className="p-1 rounded hover:bg-[#1a1616] text-[#9aa0a6] hover:text-white transition"
-                title="Undo (Ctrl+Z)"
+                onClick={() => setMainTab("doc")}
+                className={`flex items-center gap-2 px-3 py-1.5 rounded-xl text-xs font-medium transition cursor-pointer shrink-0 ${mainTab === "doc"
+                    ? "bg-[#141111] text-white shadow-sm font-semibold"
+                    : "text-[#9aa0a6] hover:text-white hover:bg-[#141111]"
+                  }`}
               >
-                <Undo2 className="w-3.5 h-3.5" />
-              </button>
-              <button
-                type="button"
-                onClick={handleRedo}
-                className="p-1 rounded hover:bg-[#1a1616] text-[#9aa0a6] hover:text-white transition"
-                title="Redo (Ctrl+Y)"
-              >
-                <Redo2 className="w-3.5 h-3.5" />
+                <FileSpreadsheet className="w-3.5 h-3.5" />
+                <span>Dokumen PRD</span>
               </button>
 
-              <div className="w-[1px] h-4 bg-[#241f1f] mx-1" />
-
-              {/* Headings */}
               <button
                 type="button"
-                onClick={() => executeFormat("formatBlock", "h1")}
-                className="p-1 rounded hover:bg-[#1a1616] text-[#9aa0a6] hover:text-white font-bold"
-                title="Heading 1"
+                onClick={() => setMainTab("flow")}
+                className={`flex items-center gap-2 px-3 py-1.5 rounded-xl text-xs font-medium transition cursor-pointer shrink-0 ${mainTab === "flow"
+                    ? "bg-[#141111] text-white shadow-sm font-semibold"
+                    : "text-[#9aa0a6] hover:text-white hover:bg-[#141111]"
+                  }`}
               >
-                <Heading1 className="w-3.5 h-3.5" />
-              </button>
-              <button
-                type="button"
-                onClick={() => executeFormat("formatBlock", "h2")}
-                className="p-1 rounded hover:bg-[#1a1616] text-[#9aa0a6] hover:text-white font-bold"
-                title="Heading 2"
-              >
-                <Heading2 className="w-3.5 h-3.5" />
-              </button>
-              <button
-                type="button"
-                onClick={() => executeFormat("formatBlock", "h3")}
-                className="p-1 rounded hover:bg-[#1a1616] text-[#9aa0a6] hover:text-white font-bold"
-                title="Heading 3"
-              >
-                <Heading3 className="w-3.5 h-3.5" />
+                <Workflow className="w-3.5 h-3.5" />
+                <span>System Flowchart</span>
               </button>
 
-              <div className="w-[1px] h-4 bg-[#241f1f] mx-1" />
-
-              {/* Inline formatting */}
               <button
                 type="button"
-                onClick={() => executeFormat("bold")}
-                className="p-1 rounded hover:bg-[#1a1616] text-[#9aa0a6] hover:text-white font-bold"
-                title="Bold (Ctrl+B)"
+                onClick={() => setMainTab("database")}
+                className={`flex items-center gap-2 px-3 py-1.5 rounded-xl text-xs font-medium transition cursor-pointer shrink-0 ${mainTab === "database"
+                    ? "bg-[#141111] text-white shadow-sm font-semibold"
+                    : "text-[#9aa0a6] hover:text-white hover:bg-[#141111]"
+                  }`}
               >
-                <Bold className="w-3.5 h-3.5" />
-              </button>
-              <button
-                type="button"
-                onClick={() => executeFormat("italic")}
-                className="p-1 rounded hover:bg-[#1a1616] text-[#9aa0a6] hover:text-white italic"
-                title="Italic (Ctrl+I)"
-              >
-                <Italic className="w-3.5 h-3.5" />
-              </button>
-              <button
-                type="button"
-                onClick={() => executeFormat("strikeThrough")}
-                className="p-1 rounded hover:bg-[#1a1616] text-[#9aa0a6] hover:text-white"
-                title="Strikethrough"
-              >
-                <Strikethrough className="w-3.5 h-3.5" />
+                <Database className="w-3.5 h-3.5" />
+                <span>Database (ERD & DDL)</span>
               </button>
 
-              <div className="w-[1px] h-4 bg-[#241f1f] mx-1" />
-
-              {/* Lists */}
               <button
                 type="button"
-                onClick={() => executeFormat("insertUnorderedList")}
-                className="p-1 rounded hover:bg-[#1a1616] text-[#9aa0a6] hover:text-white"
-                title="Bullet List"
+                onClick={() => setMainTab("designs")}
+                className={`flex items-center gap-2 px-3 py-1.5 rounded-xl text-xs font-medium transition cursor-pointer shrink-0 ${mainTab === "designs"
+                    ? "bg-[#141111] text-white shadow-sm font-semibold"
+                    : "text-[#9aa0a6] hover:text-white hover:bg-[#141111]"
+                  }`}
               >
-                <List className="w-3.5 h-3.5" />
-              </button>
-              <button
-                type="button"
-                onClick={() => executeFormat("insertOrderedList")}
-                className="p-1 rounded hover:bg-[#1a1616] text-[#9aa0a6] hover:text-white"
-                title="Numbered List"
-              >
-                <ListOrdered className="w-3.5 h-3.5" />
+                <ImageIcon className="w-3.5 h-3.5" />
+                <span>UI Mockups</span>
               </button>
 
-              <div className="w-[1px] h-4 bg-[#241f1f] mx-1" />
-
-              {/* Real Table Insert */}
               <button
                 type="button"
-                onClick={handleInsertTable}
-                className="px-2 py-0.5 rounded hover:bg-[#1a1616] text-[#9aa0a6] hover:text-[#408175] flex items-center gap-1 font-medium cursor-pointer"
-                title="Sisipkan Tabel Visual Baru"
+                onClick={() => setMainTab("mockup")}
+                className={`flex items-center gap-2 px-3 py-1.5 rounded-xl text-xs font-medium transition cursor-pointer shrink-0 ${mainTab === "mockup"
+                    ? "bg-[#141111] text-white shadow-sm font-semibold"
+                    : "text-[#9aa0a6] hover:text-white hover:bg-[#141111]"
+                  }`}
               >
-                <TableIcon className="w-3.5 h-3.5 text-[#408175]" />
-                <span className="hidden sm:inline text-[11px] font-semibold text-[#408175]">
-                  + Tabel
-                </span>
-              </button>
-
-              {/* Quote */}
-              <button
-                type="button"
-                onClick={() => executeFormat("formatBlock", "blockquote")}
-                className="p-1 rounded hover:bg-[#1a1616] text-[#9aa0a6] hover:text-white"
-                title="Kutipan / Catatan"
-              >
-                <Quote className="w-3.5 h-3.5" />
-              </button>
-
-              {/* Divider */}
-              <button
-                type="button"
-                onClick={() => executeFormat("insertHorizontalRule")}
-                className="p-1 rounded hover:bg-[#1a1616] text-[#9aa0a6] hover:text-white"
-                title="Garis Pembatas (Divider)"
-              >
-                <Minus className="w-3.5 h-3.5" />
+                <Smartphone className="w-3.5 h-3.5" />
+                <span>Live Prototype</span>
               </button>
             </div>
 
-            {/* Word count & Autosave status */}
-            <div className="flex items-center gap-2 text-[11px] text-[#80868b] shrink-0 pl-2">
-              <span>{wordCount} kata</span>
-              <span>·</span>
-              <span className="flex items-center gap-1 text-[#408175]">
-                <CheckCircle2 className="w-3 h-3" />
-                <span>{isSaved ? "Tersimpan di Database" : "Menyimpan ke Cloud..."}</span>
-              </span>
-            </div>
+            {/* Sub-actions for Database tab (Visual ERD vs DDL SQL) */}
+            {mainTab === "database" && (
+              <div className="flex items-center gap-1.5 shrink-0">
+                <div className="flex items-center bg-[#141111] p-0.5 rounded-lg border border-[#241f1f]">
+                  <button
+                    type="button"
+                    onClick={() => setDbViewMode("erd")}
+                    className={`px-2.5 py-1 rounded-md text-[11px] font-medium transition cursor-pointer ${dbViewMode === "erd"
+                        ? "bg-[#1a1616] text-[#FAF6F4] font-bold"
+                        : "text-[#80868b] hover:text-white"
+                      }`}
+                  >
+                    Visual ERD
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setDbViewMode("ddl")}
+                    className={`px-2.5 py-1 rounded-md text-[11px] font-medium transition cursor-pointer ${dbViewMode === "ddl"
+                        ? "bg-[#1a1616] text-[#FAF6F4] font-bold"
+                        : "text-[#80868b] hover:text-white"
+                      }`}
+                  >
+                    DDL SQL
+                  </button>
+                </div>
+              </div>
+            )}
           </div>
 
-          {/* Visual Document Canvas */}
-          <div
-            ref={editorScrollContainerRef}
-            className="flex-1 overflow-y-auto p-6 sm:p-10 md:p-12 bg-[#0B0909] relative"
-          >
-            <div className="max-w-3xl mx-auto space-y-4">
-              {/* Top Header Category */}
-              <div>
-                <div className="flex items-center justify-between">
-                  <span className="text-[11px] font-bold text-[#408175] tracking-widest uppercase">
-                    PRODUCT REQUIREMENTS DOCUMENT
-                  </span>
-                  <span className="text-[10px] font-mono text-[#80868b] bg-[#141111] px-2 py-0.5 rounded border border-[#241f1f]">
-                    {currentDocId}
+          {/* VIEW 1: Dokumen PRD (Editor) */}
+          {mainTab === "doc" && (
+            <>
+              {/* Docs Formatting Toolbar (WYSIWYG Commands) */}
+              <div className="h-10 border-b border-[#241f1f] bg-[#141111] px-3 flex items-center justify-between shrink-0 text-xs overflow-x-auto no-scrollbar">
+                <div className="flex items-center gap-1 shrink-0">
+                  {/* Undo / Redo */}
+                  <button
+                    type="button"
+                    onClick={handleUndo}
+                    className="p-1 rounded hover:bg-[#1a1616] text-[#9aa0a6] hover:text-white transition"
+                    title="Undo (Ctrl+Z)"
+                  >
+                    <Undo2 className="w-3.5 h-3.5" />
+                  </button>
+                  <button
+                    type="button"
+                    onClick={handleRedo}
+                    className="p-1 rounded hover:bg-[#1a1616] text-[#9aa0a6] hover:text-white transition"
+                    title="Redo (Ctrl+Y)"
+                  >
+                    <Redo2 className="w-3.5 h-3.5" />
+                  </button>
+
+                  <div className="w-[1px] h-4 bg-[#241f1f] mx-1" />
+
+                  {/* Headings */}
+                  <button
+                    type="button"
+                    onClick={() => executeFormat("formatBlock", "h1")}
+                    className="p-1 rounded hover:bg-[#1a1616] text-[#9aa0a6] hover:text-white font-bold"
+                    title="Heading 1"
+                  >
+                    <Heading1 className="w-3.5 h-3.5" />
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => executeFormat("formatBlock", "h2")}
+                    className="p-1 rounded hover:bg-[#1a1616] text-[#9aa0a6] hover:text-white font-bold"
+                    title="Heading 2"
+                  >
+                    <Heading2 className="w-3.5 h-3.5" />
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => executeFormat("formatBlock", "h3")}
+                    className="p-1 rounded hover:bg-[#1a1616] text-[#9aa0a6] hover:text-white font-bold"
+                    title="Heading 3"
+                  >
+                    <Heading3 className="w-3.5 h-3.5" />
+                  </button>
+
+                  <div className="w-[1px] h-4 bg-[#241f1f] mx-1" />
+
+                  {/* Inline formatting */}
+                  <button
+                    type="button"
+                    onClick={() => executeFormat("bold")}
+                    className="p-1 rounded hover:bg-[#1a1616] text-[#9aa0a6] hover:text-white font-bold"
+                    title="Bold (Ctrl+B)"
+                  >
+                    <Bold className="w-3.5 h-3.5" />
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => executeFormat("italic")}
+                    className="p-1 rounded hover:bg-[#1a1616] text-[#9aa0a6] hover:text-white italic"
+                    title="Italic (Ctrl+I)"
+                  >
+                    <Italic className="w-3.5 h-3.5" />
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => executeFormat("strikeThrough")}
+                    className="p-1 rounded hover:bg-[#1a1616] text-[#9aa0a6] hover:text-white"
+                    title="Strikethrough"
+                  >
+                    <Strikethrough className="w-3.5 h-3.5" />
+                  </button>
+
+                  <div className="w-[1px] h-4 bg-[#241f1f] mx-1" />
+
+                  {/* Lists */}
+                  <button
+                    type="button"
+                    onClick={() => executeFormat("insertUnorderedList")}
+                    className="p-1 rounded hover:bg-[#1a1616] text-[#9aa0a6] hover:text-white"
+                    title="Bullet List"
+                  >
+                    <List className="w-3.5 h-3.5" />
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => executeFormat("insertOrderedList")}
+                    className="p-1 rounded hover:bg-[#1a1616] text-[#9aa0a6] hover:text-white"
+                    title="Numbered List"
+                  >
+                    <ListOrdered className="w-3.5 h-3.5" />
+                  </button>
+
+                  <div className="w-[1px] h-4 bg-[#241f1f] mx-1" />
+
+                  {/* Real Table Insert */}
+                  <button
+                    type="button"
+                    onClick={handleInsertTable}
+                    className="px-2 py-0.5 rounded hover:bg-[#1a1616] text-[#9aa0a6] hover:text-[#408175] flex items-center gap-1 font-medium cursor-pointer"
+                    title="Sisipkan Tabel Visual Baru"
+                  >
+                    <TableIcon className="w-3.5 h-3.5 text-[#408175]" />
+                    <span className="hidden sm:inline text-[11px] font-semibold text-[#408175]">
+                      + Tabel
+                    </span>
+                  </button>
+
+                  {/* Quote */}
+                  <button
+                    type="button"
+                    onClick={() => executeFormat("formatBlock", "blockquote")}
+                    className="p-1 rounded hover:bg-[#1a1616] text-[#9aa0a6] hover:text-white"
+                    title="Kutipan / Catatan"
+                  >
+                    <Quote className="w-3.5 h-3.5" />
+                  </button>
+
+                  {/* Divider */}
+                  <button
+                    type="button"
+                    onClick={() => executeFormat("insertHorizontalRule")}
+                    className="p-1 rounded hover:bg-[#1a1616] text-[#9aa0a6] hover:text-white"
+                    title="Garis Pembatas (Divider)"
+                  >
+                    <Minus className="w-3.5 h-3.5" />
+                  </button>
+                </div>
+
+                {/* Word count & Autosave status */}
+             
+              </div>
+
+              {/* Visual Document Canvas */}
+              <div
+                ref={editorScrollContainerRef}
+                className="flex-1 overflow-y-auto p-6 sm:p-10 md:p-12 bg-[#0B0909] relative"
+              >
+                <div className="max-w-3xl mx-auto space-y-4">
+                  {/* Top Header Category */}
+                  <div>
+                    <div className="flex items-center justify-between">
+                      <span className="text-[11px] font-bold text-[#408175] tracking-widest uppercase">
+                        PRODUCT REQUIREMENTS DOCUMENT
+                      </span>
+                      <span className="text-[10px] font-mono text-[#80868b] bg-[#141111] px-2 py-0.5 rounded border border-[#241f1f]">
+                        {currentDocId}
+                      </span>
+                    </div>
+
+                    <h1
+                      contentEditable
+                      suppressContentEditableWarning
+                      onBlur={(e) => {
+                        const newTitle = e.currentTarget.innerText.trim() || DEFAULT_DOC_TITLE;
+                        setDocTitle(newTitle);
+                        if (editorRef.current) {
+                          syncDocumentToDatabase(editorRef.current.innerHTML, newTitle);
+                        }
+                      }}
+                      className="text-2xl sm:text-3xl font-extrabold text-white mt-1.5 focus:outline-none focus:ring-1 focus:ring-[#408175]/50 rounded px-1 -mx-1"
+                      title="Klik untuk mengedit judul dokumen langsung"
+                    >
+                      {docTitle}
+                    </h1>
+                    <p className="text-xs text-[#9aa0a6] mt-1.5">
+                      Tersimpan di Supabase Cloud Database · Multi-user Team Ready
+                    </p>
+                    <hr className="mt-4 border-[#241f1f]" />
+                  </div>
+
+                  {/* Document Canvas Container with Live Multiplayer Cursors */}
+                  <div ref={canvasContainerRef} className="relative">
+                    {/* Live Multiplayer Cursors & Username Badges */}
+                    {collaborators
+                      .filter((c) => !c.isSelf && c.isOnline && c.cursorPos)
+                      .map((collab) => {
+                        return (
+                          <div
+                            key={collab.id}
+                            className="pointer-events-none absolute z-30 transition-all duration-300 ease-out"
+                            style={{
+                              left: `${collab.cursorPos!.x}px`,
+                              top: `${collab.cursorPos!.y}px`,
+                            }}
+                          >
+                            {/* SVG Cursor Pointer */}
+                            <svg
+                              className="w-4 h-4 drop-shadow-md -rotate-12"
+                              style={{ color: collab.color, fill: collab.color }}
+                              viewBox="0 0 24 24"
+                            >
+                              <path d="M5.653 3.123A1 1 0 0 0 4.19 4.19l5.85 14.04a1 1 0 0 0 1.83-.062l2.368-5.684 5.684-2.368a1 1 0 0 0 .062-1.83L5.653 3.123z" />
+                            </svg>
+
+                            {/* Username Label Badge */}
+                            <div
+                              className="flex items-center gap-1.5 px-2 py-0.5 rounded-full shadow-lg text-[10px] font-semibold text-white whitespace-nowrap ml-3 -mt-1 select-none border border-black/30"
+                              style={{ backgroundColor: collab.color }}
+                            >
+                              {collab.cursorPos!.isEditing && (
+                                <span className="w-1.5 h-1.5 rounded-full bg-white animate-ping shrink-0" />
+                              )}
+                              <span>{collab.name}</span>
+                              <span className="opacity-90 text-[9px] font-normal">
+                                {collab.cursorPos!.isEditing ? "✎ Mengedit" : "👁 Melihat"}
+                              </span>
+                            </div>
+
+                            {/* Current Section Tag */}
+                            {collab.cursorPos!.sectionName && (
+                              <div className="text-[9.5px] text-[#e3e3e3] bg-[#141111]/95 border border-white/10 px-2 py-0.5 rounded-md mt-1 ml-3 shadow-md backdrop-blur-sm max-w-[220px] truncate flex items-center gap-1">
+                                <span
+                                  className="w-1.5 h-1.5 rounded-full shrink-0"
+                                  style={{ backgroundColor: collab.color }}
+                                />
+                                <span>{collab.cursorPos!.sectionName}</span>
+                              </div>
+                            )}
+                          </div>
+                        );
+                      })}
+
+                    {/* Live Multiplayer Text Block Selection Highlights (Realtime Block View) */}
+                    {collaborators
+                      .filter(
+                        (c) =>
+                          !c.isSelf &&
+                          c.isOnline &&
+                          c.selection &&
+                          c.selection.rects &&
+                          c.selection.rects.length > 0
+                      )
+                      .map((collab) => {
+                        let displayRects = collab.selection!.rects;
+                        // Dynamically calibrate pixel-perfect selection rects using local DOM text range
+                        if (editorRef.current && canvasContainerRef.current && collab.selection!.text) {
+                          try {
+                            const localRange = findRangeForText(editorRef.current, collab.selection!.text);
+                            if (localRange) {
+                              const cRect = canvasContainerRef.current.getBoundingClientRect();
+                              const localClientRects = localRange.getClientRects();
+                              if (localClientRects.length > 0) {
+                                const computed: Array<{ x: number; y: number; width: number; height: number }> = [];
+                                for (let i = 0; i < localClientRects.length; i++) {
+                                  const r = localClientRects[i];
+                                  if (r.width > 0 && r.height > 0) {
+                                    computed.push({
+                                      x: Math.round(r.left - cRect.left),
+                                      y: Math.round(r.top - cRect.top),
+                                      width: Math.round(r.width),
+                                      height: Math.round(r.height),
+                                    });
+                                  }
+                                }
+                                if (computed.length > 0) {
+                                  displayRects = computed;
+                                }
+                              }
+                            }
+                          } catch { }
+                        }
+
+                        if (!displayRects || displayRects.length === 0) return null;
+
+                        return (
+                          <div key={`sel_${collab.id}`} className="pointer-events-none absolute inset-0 z-20">
+                            {displayRects.map((rect, idx) => (
+                              <div
+                                key={idx}
+                                className="absolute rounded-[2px] transition-all duration-75"
+                                style={{
+                                  left: `${rect.x}px`,
+                                  top: `${rect.y}px`,
+                                  width: `${rect.width}px`,
+                                  height: `${rect.height}px`,
+                                  backgroundColor: `${collab.color}35`,
+                                  borderBottom: `2.5px solid ${collab.color}`,
+                                  boxShadow: `0 0 10px ${collab.color}30`,
+                                }}
+                              />
+                            ))}
+                          </div>
+                        );
+                      })}
+
+                    {/* THE CORE WYSIWYG DOCUMENT CANVAS (ContentEditable) */}
+                    <div
+                      ref={editorRef}
+                      contentEditable="true"
+                      suppressContentEditableWarning={true}
+                      onInput={handleEditorInput}
+                      onClick={handleEditorInteraction}
+                      onKeyUp={handleEditorInteraction}
+                      onMouseMove={handleEditorInteraction}
+                      className="w-full min-h-[600px] outline-none font-sans text-sm sm:text-base leading-relaxed text-[#f1f3f4] space-y-4 prose prose-invert max-w-none focus:ring-0 selection:bg-[#408175]/35"
+                      spellCheck={false}
+                    />
+                  </div>
+                </div>
+              </div>
+            </>
+          )}
+
+          {/* VIEW 2: System Flowchart */}
+          {mainTab === "flow" && (
+            <div className="flex-1 overflow-y-auto p-4 sm:p-6 bg-[#0B0909]">
+              <div className="space-y-4 max-w-5xl mx-auto h-full flex flex-col">
+                <div className="rounded-2xl border border-[#241f1f] bg-[#141111] p-4 flex items-center justify-between shrink-0">
+                  <div>
+                    <h3 className="text-sm font-semibold text-white">
+                      Arsitektur Alur Sistem Terintegrasi
+                    </h3>
+                    <p className="text-xs text-[#80868b]">
+                      Visualisasi state machine interaktif dan pencegahan race condition
+                    </p>
+                  </div>
+                  <span className="text-xs px-2.5 py-1 rounded-full bg-emerald-500/10 text-emerald-400 border border-emerald-500/30 font-medium">
+                    Race Condition Mitigated
                   </span>
                 </div>
 
-                <h1
-                  contentEditable
-                  suppressContentEditableWarning
-                  onBlur={(e) => {
-                    const newTitle = e.currentTarget.innerText.trim() || DEFAULT_DOC_TITLE;
-                    setDocTitle(newTitle);
-                    if (editorRef.current) {
-                      syncDocumentToDatabase(editorRef.current.innerHTML, newTitle);
-                    }
-                  }}
-                  className="text-2xl sm:text-3xl font-extrabold text-white mt-1.5 focus:outline-none focus:ring-1 focus:ring-[#408175]/50 rounded px-1 -mx-1"
-                  title="Klik untuk mengedit judul dokumen langsung"
-                >
-                  {docTitle}
-                </h1>
-                <p className="text-xs text-[#9aa0a6] mt-1.5">
-                  Tersimpan di Supabase Cloud Database · Multi-user Team Ready
-                </p>
-                <hr className="mt-4 border-[#241f1f]" />
+                {compiledData.flowchartData ? (
+                  <SystemFlowDiagram
+                    rawCode={JSON.stringify(compiledData.flowchartData, null, 2)}
+                    language="flow-json"
+                  />
+                ) : (
+                  <div className="rounded-2xl border border-[#241f1f] bg-[#141111] p-8 text-center text-xs text-[#80868b]">
+                    Memuat diagram alur sistem...
+                  </div>
+                )}
               </div>
+            </div>
+          )}
 
-              {/* Document Canvas Container with Live Multiplayer Cursors */}
-              <div ref={canvasContainerRef} className="relative">
-                {/* Live Multiplayer Cursors & Username Badges */}
-                {collaborators
-                  .filter((c) => !c.isSelf && c.isOnline && c.cursorPos)
-                  .map((collab) => {
-                    return (
-                      <div
-                        key={collab.id}
-                        className="pointer-events-none absolute z-30 transition-all duration-300 ease-out"
-                        style={{
-                          left: `${collab.cursorPos!.x}px`,
-                          top: `${collab.cursorPos!.y}px`,
-                        }}
-                      >
-                        {/* SVG Cursor Pointer */}
-                        <svg
-                          className="w-4 h-4 drop-shadow-md -rotate-12"
-                          style={{ color: collab.color, fill: collab.color }}
-                          viewBox="0 0 24 24"
-                        >
-                          <path d="M5.653 3.123A1 1 0 0 0 4.19 4.19l5.85 14.04a1 1 0 0 0 1.83-.062l2.368-5.684 5.684-2.368a1 1 0 0 0 .062-1.83L5.653 3.123z" />
-                        </svg>
+          {/* VIEW 3: Database (ERD & DDL) */}
+          {mainTab === "database" && (
+            <div className="flex-1 overflow-y-auto p-4 sm:p-6 bg-[#0B0909]">
+              <div className="space-y-4 max-w-5xl mx-auto h-full flex flex-col">
+                <div className="rounded-2xl border border-[#241f1f] bg-[#141111] p-4 flex items-center justify-between shrink-0">
+                  <div>
+                    <h3 className="text-sm font-semibold text-white">
+                      Skema PostgreSQL DDL (Normalisasi 3NF)
+                    </h3>
+                    <p className="text-xs text-[#80868b]">
+                      Didukung UUID v7, foreign key cascading, index B-Tree, dan snapshot harga atomik
+                    </p>
+                  </div>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      if (typeof window !== "undefined" && navigator.clipboard) {
+                        navigator.clipboard.writeText(compiledData.databaseSchemaSql);
+                        triggerToast("📋 Skema DDL SQL berhasil disalin ke clipboard!");
+                      }
+                    }}
+                    className="px-3 py-1.5 rounded-lg bg-[#141111] hover:bg-[#1a1616] text-white text-xs font-medium transition flex items-center gap-1.5 border border-[#241f1f] cursor-pointer"
+                  >
+                    <Copy className="w-3.5 h-3.5" />
+                    <span>Salin SQL</span>
+                  </button>
+                </div>
 
-                        {/* Username Label Badge */}
-                        <div
-                          className="flex items-center gap-1.5 px-2 py-0.5 rounded-full shadow-lg text-[10px] font-semibold text-white whitespace-nowrap ml-3 -mt-1 select-none border border-black/30"
-                          style={{ backgroundColor: collab.color }}
-                        >
-                          {collab.cursorPos!.isEditing && (
-                            <span className="w-1.5 h-1.5 rounded-full bg-white animate-ping shrink-0" />
-                          )}
-                          <span>{collab.name}</span>
-                          <span className="opacity-90 text-[9px] font-normal">
-                            {collab.cursorPos!.isEditing ? "✎ Mengedit" : "👁 Melihat"}
-                          </span>
-                        </div>
+                {dbViewMode === "erd" ? (
+                  <div className="flex-1 min-h-[460px]">
+                    <VisualErdDiagram sql={compiledData.databaseSchemaSql} />
+                  </div>
+                ) : (
+                  <div className="rounded-2xl border border-[#241f1f] bg-[#0B0909] p-5 font-mono text-xs text-sky-300 overflow-x-auto shadow-inner leading-relaxed">
+                    <pre className="whitespace-pre">
+                      {compiledData.databaseSchemaSql}
+                    </pre>
+                  </div>
+                )}
+              </div>
+            </div>
+          )}
 
-                        {/* Current Section Tag */}
-                        {collab.cursorPos!.sectionName && (
-                          <div className="text-[9.5px] text-[#e3e3e3] bg-[#141111]/95 border border-white/10 px-2 py-0.5 rounded-md mt-1 ml-3 shadow-md backdrop-blur-sm max-w-[220px] truncate flex items-center gap-1">
-                            <span
-                              className="w-1.5 h-1.5 rounded-full shrink-0"
-                              style={{ backgroundColor: collab.color }}
-                            />
-                            <span>{collab.cursorPos!.sectionName}</span>
-                          </div>
-                        )}
-                      </div>
-                    );
-                  })}
+          {/* VIEW 4: UI Mockups */}
+          {mainTab === "designs" && (
+            <div className="flex-1 overflow-y-auto p-4 sm:p-6 bg-[#0B0909]">
+              <div className="space-y-6 max-w-4xl mx-auto">
+                <div className="rounded-2xl border border-[#241f1f] bg-[#141111] p-4 flex items-center justify-between">
+                  <div>
+                    <h3 className="text-sm font-semibold text-white">
+                      Inspirasi Desain Antarmuka (Dribbble UI)
+                    </h3>
+                    <p className="text-xs text-[#80868b]">
+                      Mockup aplikasi asli beresolusi tinggi sebagai acuan UI/UX engineering
+                    </p>
+                  </div>
+                </div>
 
-                {/* Live Multiplayer Text Block Selection Highlights (Realtime Block View) */}
-                {collaborators
-                  .filter(
-                    (c) =>
-                      !c.isSelf &&
-                      c.isOnline &&
-                      c.selection &&
-                      c.selection.rects &&
-                      c.selection.rects.length > 0
-                  )
-                  .map((collab) => {
-                    let displayRects = collab.selection!.rects;
-                    // Dynamically calibrate pixel-perfect selection rects using local DOM text range
-                    if (editorRef.current && canvasContainerRef.current && collab.selection!.text) {
-                      try {
-                        const localRange = findRangeForText(editorRef.current, collab.selection!.text);
-                        if (localRange) {
-                          const cRect = canvasContainerRef.current.getBoundingClientRect();
-                          const localClientRects = localRange.getClientRects();
-                          if (localClientRects.length > 0) {
-                            const computed: Array<{ x: number; y: number; width: number; height: number }> = [];
-                            for (let i = 0; i < localClientRects.length; i++) {
-                              const r = localClientRects[i];
-                              if (r.width > 0 && r.height > 0) {
-                                computed.push({
-                                  x: Math.round(r.left - cRect.left),
-                                  y: Math.round(r.top - cRect.top),
-                                  width: Math.round(r.width),
-                                  height: Math.round(r.height),
-                                });
-                              }
-                            }
-                            if (computed.length > 0) {
-                              displayRects = computed;
-                            }
-                          }
-                        }
-                      } catch {}
-                    }
+                {compiledData.dribbbleDesigns ? (
+                  <DribbbleDesignShowcase
+                    rawJson={JSON.stringify(compiledData.dribbbleDesigns, null, 2)}
+                  />
+                ) : (
+                  <div className="rounded-2xl border border-[#241f1f] bg-[#141111] p-8 text-center text-xs text-[#80868b]">
+                    Memuat mockup antarmuka...
+                  </div>
+                )}
+              </div>
+            </div>
+          )}
 
-                    if (!displayRects || displayRects.length === 0) return null;
-
-                    return (
-                      <div key={`sel_${collab.id}`} className="pointer-events-none absolute inset-0 z-20">
-                        {displayRects.map((rect, idx) => (
-                          <div
-                            key={idx}
-                            className="absolute rounded-[2px] transition-all duration-75"
-                            style={{
-                              left: `${rect.x}px`,
-                              top: `${rect.y}px`,
-                              width: `${rect.width}px`,
-                              height: `${rect.height}px`,
-                              backgroundColor: `${collab.color}35`,
-                              borderBottom: `2.5px solid ${collab.color}`,
-                              boxShadow: `0 0 10px ${collab.color}30`,
-                            }}
-                          />
-                        ))}
-                      </div>
-                    );
-                  })}
-
-                {/* THE CORE WYSIWYG DOCUMENT CANVAS (ContentEditable) */}
-                <div
-                  ref={editorRef}
-                  contentEditable="true"
-                  suppressContentEditableWarning={true}
-                  onInput={handleEditorInput}
-                  onClick={handleEditorInteraction}
-                  onKeyUp={handleEditorInteraction}
-                  onMouseMove={handleEditorInteraction}
-                  className="w-full min-h-[600px] outline-none font-sans text-sm sm:text-base leading-relaxed text-[#f1f3f4] space-y-4 prose prose-invert max-w-none focus:ring-0 selection:bg-[#408175]/35"
-                  spellCheck={false}
+          {/* VIEW 5: Live Prototype */}
+          {mainTab === "mockup" && (
+            <div className="flex-1 overflow-y-auto p-4 sm:p-6 bg-[#0B0909]">
+              <div className="space-y-6 max-w-5xl mx-auto h-full flex flex-col">
+                <InteractivePrototypePreview
+                  appName={compiledData.appName || docTitle}
+                  architectureSummary={compiledData.architectureSummary}
                 />
               </div>
             </div>
-          </div>
+          )}
         </div>
 
         {/* ================================================================== */}
@@ -2841,11 +3230,10 @@ ${docPlainText}`,
               <button
                 type="button"
                 onClick={() => setActiveTab("ai")}
-                className={`px-3 py-1.5 rounded-lg text-xs font-semibold flex items-center gap-1.5 transition ${
-                  activeTab === "ai"
+                className={`px-3 py-1.5 rounded-lg text-xs font-semibold flex items-center gap-1.5 transition ${activeTab === "ai"
                     ? "bg-[#1a1616] text-[#408175] border border-[#408175]/30 shadow-sm"
                     : "text-[#9aa0a6] hover:text-white"
-                }`}
+                  }`}
               >
                 <Sparkles className="w-3.5 h-3.5 text-[#408175]" />
                 <span>AI Co-Pilot</span>
@@ -2855,11 +3243,10 @@ ${docPlainText}`,
               <button
                 type="button"
                 onClick={() => setActiveTab("comments")}
-                className={`px-3 py-1.5 rounded-lg text-xs font-semibold flex items-center gap-1.5 transition ${
-                  activeTab === "comments"
+                className={`px-3 py-1.5 rounded-lg text-xs font-semibold flex items-center gap-1.5 transition ${activeTab === "comments"
                     ? "bg-[#1a1616] text-white border border-[#241f1f] shadow-sm"
                     : "text-[#9aa0a6] hover:text-white"
-                }`}
+                  }`}
               >
                 <MessageSquare className="w-3.5 h-3.5" />
                 <span>COMMENTS</span>
@@ -2876,52 +3263,67 @@ ${docPlainText}`,
 
           {/* TAB 1: AI CO-PILOT ASSISTANT */}
           {activeTab === "ai" && (
-            <div className="flex-1 flex flex-col overflow-hidden min-h-0">
-              {/* Quick Action Enhancement Chips */}
-              <div className="p-3 bg-[#161313] border-b border-[#241f1f] shrink-0 space-y-2">
-                <div className="flex items-center justify-between text-[11px] text-[#9aa0a6]">
+            <div className="flex-1 flex flex-col overflow-hidden min-h-0 bg-[#0B0909]">
+              {/* Quick Action Enhancement Chips & Context Info */}
+              <div className="p-3 bg-[#141111] border-b border-[#241f1f] shrink-0 space-y-2">
+                <div className="flex items-center justify-between text-[11px]">
                   <span className="font-semibold text-[#f1f3f4] flex items-center gap-1.5">
-                    <Zap className="w-3 h-3 text-[#408175]" />
-                    <span>Real-time Generator:</span>
+                    <Sparkles className="w-3.5 h-3.5 text-[#408175]" />
+                    <span>AI Co-Pilot & Direct Edit</span>
                   </span>
-                  <span className="text-[10px] text-[#408175] font-medium">
-                    Langsung edit ke database ⚡
-                  </span>
+                  {sourceSessionTitle ? (
+                    <div
+                      className="flex items-center gap-1 px-2 py-0.5 rounded-full bg-[#408175]/15 border border-[#408175]/30 text-[10px] text-[#6ee7b7] font-medium max-w-[200px] truncate"
+                      title={`Terhubung ke riwayat PRD: ${sourceSessionTitle} (${priorChatMessages.length} pesan)`}
+                    >
+                      <span className="w-1.5 h-1.5 rounded-full bg-[#10b981] animate-pulse shrink-0" />
+                      <span className="truncate">Konteks: {sourceSessionTitle}</span>
+                    </div>
+                  ) : (
+                    <span className="text-[10px] px-2 py-0.5 rounded-full bg-[#1a1616] text-[#80868b] border border-[#241f1f]">
+                      Konteks Dokumen Aktif
+                    </span>
+                  )}
                 </div>
 
                 <div className="flex flex-wrap gap-1.5">
                   <button
                     type="button"
                     onClick={() => handleQuickAiAction("moscow")}
-                    className="px-2.5 py-1 rounded-lg bg-[#1a1616] hover:bg-[#241f1f] hover:border-[#408175]/60 border border-[#241f1f] text-[11px] text-[#dcdcdc] hover:text-white transition cursor-pointer flex items-center gap-1"
+                    disabled={isAiProcessing}
+                    className="px-2.5 py-1 rounded-lg bg-[#1a1616] hover:bg-[#241f1f] hover:border-[#408175]/60 border border-[#241f1f] text-[11px] text-[#dcdcdc] hover:text-white transition cursor-pointer flex items-center gap-1 disabled:opacity-50"
                   >
                     <span>📊 Matriks MoSCoW</span>
                   </button>
                   <button
                     type="button"
                     onClick={() => handleQuickAiAction("security")}
-                    className="px-2.5 py-1 rounded-lg bg-[#1a1616] hover:bg-[#241f1f] hover:border-[#408175]/60 border border-[#241f1f] text-[11px] text-[#dcdcdc] hover:text-white transition cursor-pointer flex items-center gap-1"
+                    disabled={isAiProcessing}
+                    className="px-2.5 py-1 rounded-lg bg-[#1a1616] hover:bg-[#241f1f] hover:border-[#408175]/60 border border-[#241f1f] text-[11px] text-[#dcdcdc] hover:text-white transition cursor-pointer flex items-center gap-1 disabled:opacity-50"
                   >
-                    <span>🛡️ Security & Anti-Fraud</span>
+                    <span>🛡️ Security Audit</span>
                   </button>
                   <button
                     type="button"
                     onClick={() => handleQuickAiAction("gherkin")}
-                    className="px-2.5 py-1 rounded-lg bg-[#1a1616] hover:bg-[#241f1f] hover:border-[#408175]/60 border border-[#241f1f] text-[11px] text-[#dcdcdc] hover:text-white transition cursor-pointer flex items-center gap-1"
+                    disabled={isAiProcessing}
+                    className="px-2.5 py-1 rounded-lg bg-[#1a1616] hover:bg-[#241f1f] hover:border-[#408175]/60 border border-[#241f1f] text-[11px] text-[#dcdcdc] hover:text-white transition cursor-pointer flex items-center gap-1 disabled:opacity-50"
                   >
                     <span>🧪 Acceptance Criteria</span>
                   </button>
                   <button
                     type="button"
                     onClick={() => handleQuickAiAction("sprint")}
-                    className="px-2.5 py-1 rounded-lg bg-[#1a1616] hover:bg-[#241f1f] hover:border-[#408175]/60 border border-[#241f1f] text-[11px] text-[#dcdcdc] hover:text-white transition cursor-pointer flex items-center gap-1"
+                    disabled={isAiProcessing}
+                    className="px-2.5 py-1 rounded-lg bg-[#1a1616] hover:bg-[#241f1f] hover:border-[#408175]/60 border border-[#241f1f] text-[11px] text-[#dcdcdc] hover:text-white transition cursor-pointer flex items-center gap-1 disabled:opacity-50"
                   >
                     <span>⏱️ Sprint Milestones</span>
                   </button>
                   <button
                     type="button"
                     onClick={() => handleQuickAiAction("database")}
-                    className="px-2.5 py-1 rounded-lg bg-[#1a1616] hover:bg-[#241f1f] hover:border-[#408175]/60 border border-[#241f1f] text-[11px] text-[#dcdcdc] hover:text-white transition cursor-pointer flex items-center gap-1"
+                    disabled={isAiProcessing}
+                    className="px-2.5 py-1 rounded-lg bg-[#1a1616] hover:bg-[#241f1f] hover:border-[#408175]/60 border border-[#241f1f] text-[11px] text-[#dcdcdc] hover:text-white transition cursor-pointer flex items-center gap-1 disabled:opacity-50"
                   >
                     <span>🗄️ Skema Database</span>
                   </button>
@@ -2938,11 +3340,11 @@ ${docPlainText}`,
                     }`}
                   >
                     {msg.sender === "user" ? (
-                      <div className="max-w-[85%] bg-[#2E4540] text-white px-3.5 py-2 rounded-2xl rounded-tr-sm text-xs font-medium shadow-sm">
+                      <div className="max-w-[85%] bg-[#2E4540] text-white px-3.5 py-2.5 rounded-2xl rounded-tr-sm text-xs font-medium shadow-sm leading-relaxed break-words">
                         {msg.content}
                       </div>
                     ) : (
-                      <div className="w-full bg-[#1a1616] border border-[#241f1f] rounded-2xl rounded-tl-sm p-3.5 space-y-2.5 shadow-md">
+                      <div className="w-full bg-[#161313] border border-[#241f1f] rounded-2xl rounded-tl-sm p-3.5 space-y-2.5 shadow-md">
                         {/* AI Header */}
                         <div className="flex items-center justify-between">
                           <div className="flex items-center gap-2">
@@ -2957,20 +3359,59 @@ ${docPlainText}`,
                           <span className="text-[10px] text-[#80868b]">{msg.timestamp}</span>
                         </div>
 
-                        {/* Text Content */}
-                        <p className="text-xs text-[#dcdcdc] leading-relaxed">{msg.content}</p>
+                        {/* Text Content with Markdown */}
+                        <div className="text-xs text-[#dcdcdc] leading-relaxed break-words overflow-x-auto">
+                          <MarkdownRenderer
+                            content={msg.content}
+                            className="text-xs [&_p]:my-1.5 [&_ul]:my-1.5 [&_ol]:my-1.5 [&_li]:my-0.5 [&_h1]:text-sm [&_h2]:text-xs [&_h2]:font-bold [&_h2]:text-white [&_h3]:text-xs [&_h3]:font-bold [&_h3]:text-[#408175] [&_table]:text-[11px] [&_th]:p-1.5 [&_td]:p-1.5 [&_pre]:text-[11px] [&_pre]:p-2"
+                          />
+                        </div>
+
+                        {/* Interactive Apply Button if editPayload exists and not yet applied */}
+                        {msg.editPayload && !msg.isApplied && msg.editPayload.html && (
+                          <div className="pt-1.5">
+                            <button
+                              type="button"
+                              onClick={() => {
+                                if (msg.editPayload?.html) {
+                                  applyAiDirectEdit(
+                                    msg.editPayload.sectionTitle || "Bagian Baru",
+                                    msg.editPayload.html,
+                                    msg.editPayload.summary || "Menerapkan usulan AI ke dokumen"
+                                  );
+                                  setAiMessages((prev) =>
+                                    prev.map((m) =>
+                                      m.id === msg.id
+                                        ? {
+                                            ...m,
+                                            isApplied: true,
+                                            appliedAction:
+                                              msg.editPayload?.sectionTitle || "Usulan AI",
+                                          }
+                                        : m
+                                    )
+                                  );
+                                }
+                              }}
+                              className="w-full flex items-center justify-center gap-2 px-3 py-2 rounded-xl bg-gradient-to-r from-[#2E4540] to-[#1e332e] hover:from-[#3b5952] hover:to-[#28423c] border border-[#408175]/60 text-white text-xs font-semibold shadow-md transition-all cursor-pointer group hover:scale-[1.01]"
+                            >
+                              <Zap className="w-3.5 h-3.5 text-[#6ee7b7] group-hover:scale-110 transition-transform" />
+                              <span>⚡ Terapkan ke Dokumen PRD</span>
+                            </button>
+                          </div>
+                        )}
 
                         {/* Direct Edit Confirmation Badge */}
                         {msg.appliedAction && (
-                          <div className="flex items-center justify-between bg-[#120f0f] border border-[#408175]/30 rounded-lg px-2.5 py-1.5 text-[11px]">
+                          <div className="flex items-center justify-between bg-[#100d0d] border border-[#408175]/30 rounded-lg px-2.5 py-1.5 text-[11px]">
                             <span className="text-[#408175] font-medium flex items-center gap-1.5">
-                              <CheckCircle2 className="w-3.5 h-3.5" />
+                              <CheckCircle2 className="w-3.5 h-3.5 shrink-0" />
                               <span>{msg.appliedAction} diterapkan ke dokumen</span>
                             </span>
                             <button
                               type="button"
                               onClick={handleUndo}
-                              className="text-[10px] text-[#9aa0a6] hover:text-white underline cursor-pointer"
+                              className="text-[10px] text-[#9aa0a6] hover:text-white underline cursor-pointer shrink-0"
                             >
                               Batalkan
                             </button>
@@ -2982,11 +3423,12 @@ ${docPlainText}`,
                 ))}
 
                 {isAiProcessing && (
-                  <div className="flex items-center gap-2 text-xs text-[#408175] p-3 bg-[#1a1616] rounded-xl border border-[#408175]/30 animate-pulse">
-                    <div className="w-4 h-4 rounded-full border-2 border-[#408175] border-t-transparent animate-spin" />
-                    <span>Sedang menerapkan perubahan real-time ke dokumen PRD...</span>
+                  <div className="flex items-center gap-2 text-xs text-[#408175] p-3 bg-[#161313] rounded-xl border border-[#408175]/30 animate-pulse">
+                    <div className="w-4 h-4 rounded-full border-2 border-[#408175] border-t-transparent animate-spin shrink-0" />
+                    <span>Sedang memproses instruksi & menganalisis PRD...</span>
                   </div>
                 )}
+                <div ref={aiMessagesEndRef} />
               </div>
 
               {/* Real-time AI Instruction Input */}
@@ -3004,14 +3446,15 @@ ${docPlainText}`,
                         handleCustomAiSubmit(e);
                       }
                     }}
-                    placeholder="Minta AI: 'Tambahkan tabel analisis kompetitor', 'Ubah bagian latar belakang', dsb. Perubahan langsung tersimpan ke database tim!"
+                    placeholder="Ajak ngobrol santai, minta ide fitur inovatif, atau minta edit: 'Tambahkan tabel analisis kompetitor', 'Lengkapi bab 5', dll."
                     rows={2}
                     className="w-full bg-transparent text-xs text-white placeholder-[#80868b] focus:outline-none resize-none leading-relaxed"
                   />
 
                   <div className="flex items-center justify-between pt-1 border-t border-[#241f1f]/50">
-                    <span className="text-[10px] text-[#80868b]">
-                      Perubahan otomatis disinkronkan ke Database & Chat
+                    <span className="text-[10px] text-[#80868b] flex items-center gap-1">
+                      <Sparkles className="w-3 h-3 text-[#408175]" />
+                      <span>Ide, Diskusi, & Edit Dokumen Langsung</span>
                     </span>
 
                     <button
@@ -3019,8 +3462,12 @@ ${docPlainText}`,
                       disabled={!aiInput.trim() || isAiProcessing}
                       className="px-3 py-1.5 rounded-lg bg-[#408175] hover:bg-[#4ea092] disabled:opacity-40 text-white text-xs font-semibold flex items-center gap-1.5 transition cursor-pointer"
                     >
-                      <Send className="w-3 h-3" />
-                      <span>Terapkan</span>
+                      {isAiProcessing ? (
+                        <div className="w-3.5 h-3.5 rounded-full border-2 border-white border-t-transparent animate-spin" />
+                      ) : (
+                        <Send className="w-3 h-3" />
+                      )}
+                      <span>Kirim</span>
                     </button>
                   </div>
                 </div>
@@ -3041,33 +3488,30 @@ ${docPlainText}`,
                   <button
                     type="button"
                     onClick={() => setCommentFilter("all")}
-                    className={`px-2 py-0.5 rounded text-[10px] font-medium transition cursor-pointer ${
-                      commentFilter === "all"
+                    className={`px-2 py-0.5 rounded text-[10px] font-medium transition cursor-pointer ${commentFilter === "all"
                         ? "bg-[#241f1f] text-white"
                         : "text-[#9aa0a6] hover:text-white"
-                    }`}
+                      }`}
                   >
                     Semua ({comments.length})
                   </button>
                   <button
                     type="button"
                     onClick={() => setCommentFilter("open")}
-                    className={`px-2 py-0.5 rounded text-[10px] font-medium transition cursor-pointer ${
-                      commentFilter === "open"
+                    className={`px-2 py-0.5 rounded text-[10px] font-medium transition cursor-pointer ${commentFilter === "open"
                         ? "bg-[#241f1f] text-[#408175]"
                         : "text-[#9aa0a6] hover:text-white"
-                    }`}
+                      }`}
                   >
                     Terbuka ({openCommentsCount})
                   </button>
                   <button
                     type="button"
                     onClick={() => setCommentFilter("resolved")}
-                    className={`px-2 py-0.5 rounded text-[10px] font-medium transition cursor-pointer ${
-                      commentFilter === "resolved"
+                    className={`px-2 py-0.5 rounded text-[10px] font-medium transition cursor-pointer ${commentFilter === "resolved"
                         ? "bg-[#241f1f] text-[#80868b]"
                         : "text-[#9aa0a6] hover:text-white"
-                    }`}
+                      }`}
                   >
                     Selesai ({resolvedCommentsCount})
                   </button>
@@ -3086,8 +3530,8 @@ ${docPlainText}`,
                         {commentFilter === "resolved"
                           ? "Tidak ada catatan yang selesai"
                           : commentFilter === "open" && comments.length > 0
-                          ? "Semua catatan telah diselesaikan! 🎉"
-                          : "Belum ada catatan review"}
+                            ? "Semua catatan telah diselesaikan! 🎉"
+                            : "Belum ada catatan review"}
                       </h4>
                       <p className="text-xs text-[#80868b] max-w-xs mt-1">
                         Tinggalkan catatan review atau tanyakan klarifikasi arsitektur kepada tim dan Koda AI.
@@ -3117,11 +3561,10 @@ ${docPlainText}`,
                   filteredComments.map((c) => (
                     <div
                       key={c.id}
-                      className={`rounded-2xl border transition-all duration-200 p-4 space-y-3 shadow-lg relative ${
-                        c.resolved
+                      className={`rounded-2xl border transition-all duration-200 p-4 space-y-3 shadow-lg relative ${c.resolved
                           ? "bg-[#141111]/70 border-[#241f1f] opacity-80"
                           : "bg-[#1a1616] border-[#241f1f] hover:border-[#408175]/40"
-                      }`}
+                        }`}
                     >
                       {/* Header */}
                       <div className="flex items-start justify-between gap-2">
@@ -3134,9 +3577,8 @@ ${docPlainText}`,
                             />
                           ) : (
                             <div
-                              className={`w-7 h-7 rounded-full ${
-                                c.authorColor || "bg-[#408175]"
-                              } text-white font-bold text-xs flex items-center justify-center shadow-inner shrink-0`}
+                              className={`w-7 h-7 rounded-full ${c.authorColor || "bg-[#408175]"
+                                } text-white font-bold text-xs flex items-center justify-center shadow-inner shrink-0`}
                             >
                               {c.initial}
                             </div>
@@ -3173,11 +3615,10 @@ ${docPlainText}`,
                             type="button"
                             onClick={() => handleToggleResolve(c.id)}
                             title={c.resolved ? "Buka kembali catatan" : "Tandai selesai"}
-                            className={`p-1 rounded-md transition cursor-pointer ${
-                              c.resolved
+                            className={`p-1 rounded-md transition cursor-pointer ${c.resolved
                                 ? "text-emerald-400 bg-emerald-500/10 hover:bg-emerald-500/20"
                                 : "text-[#80868b] hover:text-white hover:bg-[#241f1f]"
-                            }`}
+                              }`}
                           >
                             <CheckCircle2 className="w-3.5 h-3.5" />
                           </button>
@@ -3203,11 +3644,10 @@ ${docPlainText}`,
 
                       {/* Text */}
                       <p
-                        className={`text-xs leading-relaxed ${
-                          c.resolved
+                        className={`text-xs leading-relaxed ${c.resolved
                             ? "line-through text-[#80868b]"
                             : "text-[#f1f3f4]"
-                        }`}
+                          }`}
                       >
                         {c.text}
                       </p>
@@ -3244,17 +3684,15 @@ ${docPlainText}`,
                           {c.replies?.map((rep) => (
                             <div
                               key={rep.id}
-                              className={`rounded-xl p-2.5 text-xs leading-relaxed border ${
-                                rep.isAi
+                              className={`rounded-xl p-2.5 text-xs leading-relaxed border ${rep.isAi
                                   ? "bg-[#141111] border-purple-500/30 text-[#e6e8eb]"
                                   : "bg-[#141111] border-[#241f1f] text-[#dcdcdc]"
-                              }`}
+                                }`}
                             >
                               <div className="flex items-center justify-between mb-1">
                                 <span
-                                  className={`font-semibold flex items-center gap-1 text-[11px] ${
-                                    rep.isAi ? "text-purple-300" : "text-[#408175]"
-                                  }`}
+                                  className={`font-semibold flex items-center gap-1 text-[11px] ${rep.isAi ? "text-purple-300" : "text-[#408175]"
+                                    }`}
                                 >
                                   {rep.isAi && <Sparkles className="w-3 h-3 text-purple-400" />}
                                   {rep.author}
@@ -3309,11 +3747,10 @@ ${docPlainText}`,
                         <button
                           type="button"
                           onClick={() => handleToggleResolve(c.id)}
-                          className={`text-[10px] px-2 py-0.5 rounded-md font-medium transition cursor-pointer ${
-                            c.resolved
+                          className={`text-[10px] px-2 py-0.5 rounded-md font-medium transition cursor-pointer ${c.resolved
                               ? "bg-emerald-500/10 text-emerald-400 border border-emerald-500/30"
                               : "text-[#80868b] hover:text-[#dcdcdc]"
-                          }`}
+                            }`}
                         >
                           {c.resolved ? "✓ Selesai" : "Tandai Selesai"}
                         </button>
@@ -3377,11 +3814,10 @@ ${docPlainText}`,
                       key={tag.label}
                       type="button"
                       onClick={() => setSelectedCommentTag(tag.label)}
-                      className={`px-2 py-0.5 rounded-full border transition cursor-pointer shrink-0 ${
-                        selectedCommentTag === tag.label
+                      className={`px-2 py-0.5 rounded-full border transition cursor-pointer shrink-0 ${selectedCommentTag === tag.label
                           ? `${tag.color} ring-1 ring-[#408175]`
                           : "border-[#241f1f] bg-[#141111] text-[#80868b] hover:text-[#dcdcdc]"
-                      }`}
+                        }`}
                     >
                       {tag.label}
                     </button>
@@ -3424,6 +3860,34 @@ ${docPlainText}`,
           )}
         </div>
       </div>
+
+      {/* 4. MODALS (Completeness, Security Audit, CLI Connect) */}
+      <PrdCompletenessModal
+        isOpen={isCompletenessModalOpen}
+        onClose={() => setIsCompletenessModalOpen(false)}
+        completeness={completenessResult}
+        onCompleteChapter={(prompt) => {
+          setIsCompletenessModalOpen(false);
+          handleTriggerAiCompletion(prompt);
+        }}
+      />
+
+      <PrdSecurityAuditModal
+        isOpen={isAuditModalOpen}
+        onClose={() => setIsAuditModalOpen(false)}
+        auditResult={securityAuditResult}
+        onFixWithAi={(patchPrompt) => {
+          setIsAuditModalOpen(false);
+          handleTriggerAiCompletion(patchPrompt);
+        }}
+      />
+
+      <KodaCliConnectModal
+        isOpen={isCliModalOpen}
+        onClose={() => setIsCliModalOpen(false)}
+        sessionId={currentDocId}
+        appName={compiledData.appName || docTitle}
+      />
     </div>
   );
 }

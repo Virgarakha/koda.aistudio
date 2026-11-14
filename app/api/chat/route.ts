@@ -20,6 +20,7 @@ import {
   isWaitingForDesignStyle,
 } from "@/lib/ai/design-styles";
 import { getAiTool } from "@/lib/ai/tools";
+import { normalizeMarkdown } from "@/lib/ai/markdown-normalizer";
 
 // KODA MASTER SYSTEM INSTRUCTION
 // Grounded in the KODA Product Requirement Document & System Flow Engineering Methodology
@@ -388,6 +389,8 @@ export async function POST(req: Request) {
     const {
       messages = [],
       parentMessages = [],
+      sourceSessionMessages = [],
+      documentContext = "",
       systemInstructions = "",
       toolId = null,
       model = "Gemini 3.5 Flash",
@@ -412,6 +415,34 @@ export async function POST(req: Request) {
     let baseInstruction = "";
     if (effectiveToolId === "prd_builder") {
       baseInstruction = KODA_SYSTEM_INSTRUCTION;
+    } else if (effectiveToolId === "prd_editor") {
+      baseInstruction = `Anda adalah KODA PRD Co-Pilot — Ahli Product Management & Senior System Architect interaktif di PRD Document Editor.
+
+### PERAN & GAYA INTERAKSI ANDA:
+1. **Rekan Diskusi & Brainstorming Produk (Ngobrol Santai & Berwawasan Luas):**
+   - Bersikap ramah, cerdas, solutif, dan luwes layaknya rekan diskusi Head of Product / Lead Architect yang asyik diajak bertukar pikiran.
+   - Bantu pengguna melahirkan ide-ide kreatif: fitur pembeda (unique value proposition), mitigasi resiko teknis, perbaikan alur pengguna (UX), strategi retensi, hingga model monetisasi.
+   - Jawab pertanyaan biasa atau diskusi konseptual dengan penjelasan berbobot, to-the-point, dan Markdown yang rapi (gunakan poin-poin tebal, perbandingan, atau tabel ringkas jika relevan).
+
+2. **Dukungan Mengedit Dokumen PRD Secara Langsung:**
+   - Jika pengguna secara eksplisit meminta Anda menambahkan, mengubah, atau memperbarui bagian dokumen PRD (misal: "tambahkan tabel analisis kompetitor", "ubah latar belakang...", "rincikan Bab 5 NFR", "buatkan matriks MoSCoW", dll.):
+     * Sampaikan penjelasan ringkas yang ramah di pesan chat Anda.
+     * DAN sertakan blok kode khusus dengan tag \`\`\`prd-direct-edit\`\`\` yang berisi JSON terstruktur dengan HTML siap pakai.
+     * Format blok kode \`\`\`prd-direct-edit:
+\`\`\`prd-direct-edit
+{
+  "action": "append",
+  "sectionTitle": "Judul Bagian/Bab (misal: Matriks Prioritas Fitur MoSCoW / 1.3 Analisis Pasar)",
+  "html": "<h2 class=\"text-xl font-bold text-white mt-6 mb-3 border-b border-[#241f1f] pb-2\">Judul Bagian</h2><p class=\"my-2.5 leading-relaxed text-[#dcdcdc]\">Deskripsi mendalam...</p>",
+  "summary": "Menambahkan bagian X langsung ke dokumen PRD"
+}
+\`\`\`
+   - Jika pengguna HANYA ngobrol biasa, bertanya ide, atau meminta opini/saran:
+     * Jawab secara konversasional alami TANPA memaksa menyertakan blok prd-direct-edit, KECUALI jika pengguna meminta contoh spesifikasi yang siap dimasukkan ke dokumen.
+
+3. **Jangkar Konteks (PENTING AGAR TIDAK HALU):**
+   - Selalu perhatikan DOKUMEN PRD YANG SEDANG DIBUKA dan RIWAYAT CHAT SEBELUMNYA yang dilampirkan di bawah.
+   - Jangan membuat asumsi yang bertentangan dengan apa yang sudah disepakati di dokumen atau percakapan sebelumnya.`;
     } else if (effectiveToolId === "designer") {
       baseInstruction = `Anda adalah KODA UI/UX Architect & Design Systems Lead kelas dunia.
 
@@ -471,6 +502,37 @@ ${parentSummary}
 ATURAN SANGAT PENTING:
 - Anda memiliki MEMORI PENUH terhadap ide, konteks, preferensi, dan data dari Obrolan Utama di atas.
 - Sambungkan konteks dari Obrolan Utama ke dalam Obrolan Anak ini. Jangan meminta pengguna mengulang apa yang telah dibahas di Obrolan Utama.`;
+    }
+
+    // Live Context Injection for PRD Editor (Anti-Halusinasi)
+    if (documentContext && documentContext.trim().length > 0) {
+      effectiveSystemInstruction += `\n\n### ISI DOKUMEN PRD SAAT INI (LIVE DOCUMENT CONTEXT - BACA AGAR TIDAK HALU):
+"""
+${documentContext.slice(0, 10000)}
+"""
+PENTING: Seluruh ide, saran, feedback, dan usulan revisi Anda HARUS selaras dengan isi dokumen PRD di atas.`;
+    }
+
+    const priorHistory =
+      sourceSessionMessages && sourceSessionMessages.length > 0
+        ? sourceSessionMessages
+        : parentMessages;
+    if (
+      priorHistory &&
+      Array.isArray(priorHistory) &&
+      priorHistory.length > 0 &&
+      effectiveToolId === "prd_editor"
+    ) {
+      const priorSummary = priorHistory
+        .slice(-8)
+        .map((m: any) => `${m.role === "user" ? "Pengguna" : "AI"}: ${m.content}`)
+        .join("\n\n");
+
+      effectiveSystemInstruction += `\n\n### RIWAYAT CHAT SEBELUMNYA DARI PRD BUILDER / STUDIO:
+"""
+${priorSummary}
+"""
+PENTING: Rangkuman percakapan di atas adalah bagaimana ide awal produk ini dirumuskan bersama pengguna di sesi sebelumnya. Sambungkan kesinambungan konteksnya.`;
     }
 
     if (effectiveToolId === "prd_builder" && dynamicDribbbleDesigns.length > 0) {
@@ -536,13 +598,16 @@ DILARANG KERAS menggunakan foto manusia atau gambar Unsplash! Gambar WAJIB berup
 
         return NextResponse.json({
           content,
+          text: content,
           thought: `Menghubungkan ke ${customConfig.modelName} melalui ${customConfig.endpointUrl}. Respon berhasil diterima dalam ${Date.now() - requestStartTime}ms.`,
           sources: [],
         });
       } catch (err: any) {
         console.warn("Custom model call failed:", err);
+        const errMsg = `⚠️ **Gagal terhubung ke Custom AI Endpoint:**\n\n- **Model:** \`${customConfig.modelName}\`\n- **Endpoint:** \`${customConfig.endpointUrl}\`\n- **Error:** ${err?.message || err}\n\n*Tips: Pastikan URL endpoint berformat OpenAI-compatible (misal: \`https://api.openai.com/v1\` atau \`https://api.deepseek.com/v1\`) dan API Key Anda valid serta memiliki kuota aktif.*`;
         return NextResponse.json({
-          content: `⚠️ **Gagal terhubung ke Custom AI Endpoint:**\n\n- **Model:** \`${customConfig.modelName}\`\n- **Endpoint:** \`${customConfig.endpointUrl}\`\n- **Error:** ${err?.message || err}\n\n*Tips: Pastikan URL endpoint berformat OpenAI-compatible (misal: \`https://api.openai.com/v1\` atau \`https://api.deepseek.com/v1\`) dan API Key Anda valid serta memiliki kuota aktif.*`,
+          content: errMsg,
+          text: errMsg,
           thought: "Koneksi ke custom model gagal.",
           sources: [],
         });
@@ -593,7 +658,7 @@ DILARANG KERAS menggunakan foto manusia atau gambar Unsplash! Gambar WAJIB berup
         }> = [];
         
         for (const m of messages) {
-          const role: "user" | "model" = m.role === "model" ? "model" : "user";
+          const role: "user" | "model" = (m.role === "model" || m.role === "assistant") ? "model" : "user";
           const messageParts: Array<{ text?: string; inlineData?: { mimeType: string; data: string } }> = [];
 
           // 1. If message has attachments (photos, PDFs, docs)
@@ -630,6 +695,11 @@ DILARANG KERAS menggunakan foto manusia atau gambar Unsplash! Gambar WAJIB berup
           }
         }
 
+        // Gemini requires the conversation to begin with a user turn
+        while (formattedContents.length > 0 && formattedContents[0].role === "model") {
+          formattedContents.shift();
+        }
+
         // If history is empty, fallback to lastUserMessage
         if (formattedContents.length === 0 && lastUserMessage) {
           formattedContents.push({
@@ -638,10 +708,10 @@ DILARANG KERAS menggunakan foto manusia atau gambar Unsplash! Gambar WAJIB berup
           });
         }
 
-        // Adaptive timeouts: quick 8s per-model for chat/halo, 25s for large PRD payloads
-        const isPrd = effectiveToolId === "prd_builder";
-        const totalTimeoutMs = isPrd ? 60000 : 20000;
-        const perModelTimeoutMs = isPrd ? 25000 : 8000;
+        // Adaptive timeouts: 25s per-model for PRD operations, 10s for short general chat
+        const isPrd = effectiveToolId === "prd_builder" || effectiveToolId === "prd_editor";
+        const totalTimeoutMs = isPrd ? 60000 : 25000;
+        const perModelTimeoutMs = isPrd ? 25000 : 10000;
 
         const timeoutPromise = new Promise<never>((_, reject) =>
           setTimeout(() => reject(new Error("API_TOTAL_TIMEOUT")), totalTimeoutMs)
@@ -716,6 +786,9 @@ DILARANG KERAS menggunakan foto manusia atau gambar Unsplash! Gambar WAJIB berup
           replyText = ensureComplete13SectionPrd(replyText, messages, lastUserMessage);
         }
 
+        // Clean any malformed headings (**###) or collapsed directory trees
+        replyText = normalizeMarkdown(replyText);
+
         const elapsed = ((Date.now() - requestStartTime) / 1000).toFixed(1) + "s";
 
         const dynamicThought = effectiveToolId === "prd_builder"
@@ -724,6 +797,7 @@ DILARANG KERAS menggunakan foto manusia atau gambar Unsplash! Gambar WAJIB berup
 
         return NextResponse.json({
           content: replyText,
+          text: replyText,
           thought: dynamicThought,
           sources: groundingSearch ? ["Google Search: Grounded Intelligence", "Gemini Grounded Intelligence"] : [],
           tokens: Math.floor(replyText.length / 3) + 60,
@@ -860,6 +934,138 @@ Silakan isi formulir **Product Discovery** di atas atau jelaskan langsung konsep
 
 Apa ide aplikasi atau sistem yang ingin Anda rancang alurnya hari ini?`;
       }
+    } else if (effectiveToolId === "prd_editor") {
+      thought = "Menganalisis dokumen PRD aktif dan konteks diskusi untuk memberikan saran serta revisi dokumen.";
+      
+      const isEditRequest =
+        lower.includes("tambah") ||
+        lower.includes("ubah") ||
+        lower.includes("ganti") ||
+        lower.includes("edit") ||
+        lower.includes("perbarui") ||
+        lower.includes("masukkan") ||
+        lower.includes("tabel") ||
+        lower.includes("table") ||
+        lower.includes("moscow") ||
+        lower.includes("security") ||
+        lower.includes("nfr") ||
+        lower.includes("roadmap") ||
+        lower.includes("sprint");
+
+      if (isEditRequest) {
+        const sectionTitle = "Spesifikasi: " + lastUserMessage.slice(0, 35);
+        let snippetHtml = `
+<h2 class="text-xl font-bold text-white mt-6 mb-3 border-b border-[#241f1f] pb-2">${lastUserMessage}</h2>
+<p class="my-2.5 leading-relaxed text-[#dcdcdc]">
+Spesifikasi ini dirancang secara terukur mengikuti konteks dokumen PRD yang sedang dibuka:
+</p>
+<ul class="list-disc pl-6 space-y-1.5 my-3 text-[#dcdcdc]">
+  <li><strong class="text-white">Implementasi Kebutuhan:</strong> ${lastUserMessage}</li>
+  <li><strong class="text-white">Standar Operasional:</strong> Memastikan skalabilitas sistem, keamanan data, dan respon cepat &lt; 200ms.</li>
+  <li><strong class="text-white">Integrasi:</strong> Selaras dengan alur pengguna dan skema database yang telah dirumuskan.</li>
+</ul>`;
+
+        if (lower.includes("tabel") || lower.includes("table")) {
+          snippetHtml = `
+<h2 class="text-xl font-bold text-white mt-6 mb-3 border-b border-[#241f1f] pb-2">Tabel Spesifikasi: ${lastUserMessage}</h2>
+<div class="my-4 overflow-x-auto rounded-xl border border-[#241f1f] shadow-sm">
+  <table class="w-full text-left text-xs sm:text-sm border-collapse">
+    <thead class="bg-[#1a1616] text-white border-b border-[#241f1f]">
+      <tr>
+        <th class="p-3 font-semibold text-white">Komponen / Aspek</th>
+        <th class="p-3 font-semibold text-white">Spesifikasi Kebutuhan</th>
+        <th class="p-3 font-semibold text-white">Standar Validasi</th>
+      </tr>
+    </thead>
+    <tbody class="divide-y divide-[#241f1f] bg-[#120f0f]">
+      <tr>
+        <td class="p-3 font-semibold text-white">Kebutuhan Fungsional</td>
+        <td class="p-3 text-[#dcdcdc]">${lastUserMessage}</td>
+        <td class="p-3 text-[#408175]">Prioritas Utama (P0)</td>
+      </tr>
+      <tr>
+        <td class="p-3 font-semibold text-white">Keandalan Sistem</td>
+        <td class="p-3 text-[#dcdcdc]">Validasi input otomatis dan penanganan edge-case</td>
+        <td class="p-3 text-[#9aa0a6]">Toleransi Kesalahan Tinggi</td>
+      </tr>
+    </tbody>
+  </table>
+</div>`;
+        }
+
+        content = `Tentu! Saya telah menyiapkan bagian spesifikasi baru untuk **${lastUserMessage}** yang selaras dengan isi dokumen PRD Anda saat ini.
+
+Berikut ringkasan poin tambahannya:
+- **Fokus Utama:** Menyempurnakan aspek *"${lastUserMessage}"* agar arsitekturnya jelas dan siap dieksekusi tim developer.
+- **Dampak:** Memperkuat kelengkapan dokumen PRD tanpa mengganggu bab yang telah disetujui sebelumnya.
+
+\`\`\`prd-direct-edit
+${JSON.stringify(
+  {
+    action: "append",
+    sectionTitle,
+    html: snippetHtml,
+    summary: `Menambahkan bagian '${lastUserMessage.slice(0, 30)}' ke dokumen PRD`,
+  },
+  null,
+  2
+)}
+\`\`\``;
+      } else if (
+        lower.includes("kurang") ||
+        lower.includes("audit") ||
+        lower.includes("evaluasi") ||
+        lower.includes("cek") ||
+        lower.includes("analisis") ||
+        lower.includes("reviu") ||
+        lower.includes("review") ||
+        lower.includes("bagus") ||
+        lower.includes("lengkap")
+      ) {
+        const docLower = (documentContext || "").toLowerCase();
+        const missingItems: string[] = [];
+        if (!docLower.includes("moscow") && !docLower.includes("prioritas")) {
+          missingItems.push("Matriks Prioritas Fitur (MoSCoW P0-P3)");
+        }
+        if (!docLower.includes("acceptance criteria") && !docLower.includes("gherkin") && !docLower.includes("kriteria penerimaan")) {
+          missingItems.push("Kriteria Penerimaan Terstandar (Acceptance Criteria / Gherkin Given-When-Then)");
+        }
+        if (!docLower.includes("keamanan") && !docLower.includes("security") && !docLower.includes("fraud")) {
+          missingItems.push("Spesifikasi Keamanan, Validasi Input & Proteksi Anti-Fraud");
+        }
+        if (!docLower.includes("skema database") && !docLower.includes("relasi") && !docLower.includes("foreign key")) {
+          missingItems.push("Detail Spesifikasi Skema Database Relasional (PostgreSQL)");
+        }
+        if (!docLower.includes("sprint") && !docLower.includes("milestone") && !docLower.includes("jadwal")) {
+          missingItems.push("Timeline & Sprint Milestones Pengembangan MVP");
+        }
+
+        content = `Setelah saya menganalisis isi dokumen PRD Anda saat ini, secara garis besar fondasi produk sudah tersusun, namun ada beberapa area penting yang bisa kita lengkapi agar spesifikasi semakin kokoh dan siap dieksekusi tim developer:
+
+### 🔍 Rekomendasi Poin yang Perlu Dilengkapi:
+${missingItems.length > 0
+  ? missingItems.map((item, idx) => `${idx + 1}. **${item}** — Memastikan batasan scope jelas dan developer tidak perlu menebak-nebak kebutuhan teknis.`).join("\n")
+  : "1. **Penanganan Edge-case:** Skenario timeout, double-order, atau kegagalan webhook pihak ketiga.\n2. **Kriteria Penerimaan (Acceptance Criteria):** Format Gherkin untuk memandu Quality Assurance (QA).\n3. **Detail Matriks Keamanan:** Batasan upload berkas, sanitasi payload, dan rate-limiting."}
+
+---
+
+💡 **Saran Aksi:**
+Anda bisa langsung meminta saya menambahkan bagian di atas ke dokumen, misalnya:
+- *"Tolong buatkan Matriks Prioritas MoSCoW"*
+- *"Tambahkan bab spesifikasi keamanan & anti-fraud"*
+- *"Buatkan kriteria penerimaan Gherkin"*
+
+Atau klik salah satu tombol pintas **Quick Action** di atas untuk langsung saya terapkan ke dokumen PRD!`;
+      } else {
+        content = `Halo! Saya sudah membaca dokumen PRD yang sedang dibuka dan riwayat perancangan sebelumnya.
+
+Beberapa hal menarik yang bisa kita diskusikan atau tambahkan:
+1. **Penyempurnaan Fitur & Alur (UX):** Apakah ada alur khusus (seperti pembayaran, booking, atau retensi pengguna) yang ingin kita perdalam?
+2. **Mitigasi Edge Cases:** Kita bisa merumuskan penanganan gagal bayar, double-booking / race condition, atau sistem notifikasi otomatis.
+3. **Revisi Langsung:** Jika Anda punya ide baru atau ingin mengubah bagian dokumen, silakan sebutkan (misal: *"Tolong tambahkan tabel analisis kompetitor"* atau *"Ubah bab latar belakang"*), dan saya akan merumuskannya langsung ke dokumen Anda!
+
+Apa ide atau bagian yang ingin kita diskusikan sekarang?`;
+      }
     } else if (effectiveToolId === "designer") {
       thought = `Menganalisis kebutuhan desain UI/UX untuk: "${lastUserMessage.slice(0, 40)}...". Menyusun rekomendasi layout, token warna, typography, dan komponen Tailwind CSS.`;
       content = `Halo! Saya **KODA UI/UX Architect**. Konsep antarmuka untuk **"${lastUserMessage.slice(0, 50)}"** siap kita rancang dengan standar visual modern.
@@ -930,9 +1136,11 @@ ${lastUserMessage ? `Mengenai pertanyaan kamu: *"${lastUserMessage}"*, mari kita
     }
 
     const fallbackElapsed = ((Date.now() - requestStartTime) / 1000).toFixed(1) + "s";
+    const normalizedContent = normalizeMarkdown(content);
 
     return NextResponse.json({
-      content,
+      content: normalizedContent,
+      text: normalizedContent,
       thought,
       sources,
       tokens: Math.floor(content.length / 3) + 60,

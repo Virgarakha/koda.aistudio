@@ -13,6 +13,7 @@ import { DiscoveryQuestionsCard, isDiscoveryDecisionsJson } from "@/components/p
 import { DiscoveryStage2Card, isDiscoveryStage2Json } from "@/components/playground/DiscoveryStage2Card";
 import { DiscoveryConflictCard, isDiscoveryConflictJson } from "@/components/playground/DiscoveryConflictCard";
 import { DiscoveryFinalQuestionsCard, isDiscoveryFinalQuestionsJson } from "@/components/playground/DiscoveryFinalQuestionsCard";
+import { normalizeMarkdown } from "@/lib/ai/markdown-normalizer";
 
 interface MarkdownRendererProps {
   content: string;
@@ -29,6 +30,10 @@ export function MarkdownRenderer({
   onCompilePRD,
   isTyping = false,
 }: MarkdownRendererProps) {
+  const normalizedContent = React.useMemo(() => {
+    return normalizeMarkdown(content);
+  }, [content]);
+
   return (
     <div className={`markdown-content space-y-3 text-[15px] sm:text-base leading-relaxed text-[#e3e3e3] ${className}`}>
       <ReactMarkdown
@@ -221,7 +226,7 @@ export function MarkdownRenderer({
           },
         }}
       >
-        {content}
+        {normalizedContent}
       </ReactMarkdown>
       {isTyping && <span className="typing-cursor" aria-hidden="true" />}
     </div>

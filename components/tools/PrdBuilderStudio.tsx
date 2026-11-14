@@ -33,6 +33,10 @@ import {
   Ticket,
   Package,
   Cpu,
+  Terminal,
+  Smartphone,
+  Printer,
+  Table as TableIcon,
 } from "lucide-react";
 import { PrdSidebar } from "@/components/tools/PrdSidebar";
 import { MarkdownRenderer } from "@/components/playground/MarkdownRenderer";
@@ -52,6 +56,18 @@ import {
 } from "@/lib/apps/prd-storage";
 import { ChatMessage, FileAttachment } from "@/lib/apps/types";
 import { useUserProfile } from "@/hooks/use-user-profile";
+import { PrdQuestionnaireWizard } from "@/components/tools/PrdQuestionnaireWizard";
+import { PrdDecisionChips } from "@/components/tools/PrdDecisionChips";
+import { PrdCompletenessModal } from "@/components/tools/PrdCompletenessModal";
+import { VisualErdDiagram } from "@/components/playground/VisualErdDiagram";
+import { InteractivePrototypePreview } from "@/components/playground/InteractivePrototypePreview";
+import { KodaCliConnectModal } from "@/components/tools/KodaCliConnectModal";
+import { PrdSecurityAuditModal } from "@/components/tools/PrdSecurityAuditModal";
+import {
+  computePrdCompleteness,
+  computePrdSecurityAudit,
+  generateLinearJiraTasks,
+} from "@/lib/ai/prd-export-helpers";
 
 const STARTER_PRD_IDEAS = [
   {
@@ -193,25 +209,32 @@ export function PrdBuilderStudio() {
   const [isLoading, setIsLoading] = useState(false);
   const [typingMessageId, setTypingMessageId] = useState<string | null>(null);
 
-  // Right pane tab: 'prd' | 'flow' | 'database' | 'designs'
-  const [activeTab, setActiveTab] = useState<"prd" | "flow" | "database" | "designs">("prd");
+  // Right pane tab: 'prd' | 'flow' | 'database' | 'mockup' | 'designs'
+  const [activeTab, setActiveTab] = useState<"prd" | "flow" | "database" | "mockup" | "designs">("prd");
   const [prdViewMode, setPrdViewMode] = useState<"preview" | "raw">("preview");
+  const [dbViewMode, setDbViewMode] = useState<"erd" | "ddl">("erd");
   const [copiedItem, setCopiedItem] = useState<string | null>(null);
   const [activeChapter, setActiveChapter] = useState<number>(1);
+  const [isCompletenessModalOpen, setIsCompletenessModalOpen] = useState(false);
+  const [isCliModalOpen, setIsCliModalOpen] = useState(false);
+  const [isAuditModalOpen, setIsAuditModalOpen] = useState(false);
 
   const chatContainerRef = useRef<HTMLDivElement>(null);
 
-  // The right pane should ONLY open when the AI has actually produced a model response
-  // (or when viewing a saved session that already has assistant responses).
-  // While the user is on new chat and AI is still loading (isLoading === true), the right pane STAYS HIDDEN!
+  const [manualRightPaneOpen, setManualRightPaneOpen] = useState<boolean | null>(null);
+
+  // The right pane should open automatically when the AI has actually produced a model response
+  // (or when viewing a saved session that already has assistant responses),
+  // OR manually if the user clicks the toggle button.
   const hasModelResponse = useMemo(() => {
     return messages.some((m) => m.role === "model" && m.content.trim().length > 0);
   }, [messages]);
 
   const isRightPaneOpen = useMemo(() => {
+    if (manualRightPaneOpen !== null) return manualRightPaneOpen;
     if (activeSessionId === SEED_BOOKING_KOS_SESSION.id && messages.length > 0) return true;
     return hasModelResponse;
-  }, [hasModelResponse, activeSessionId, messages.length]);
+  }, [manualRightPaneOpen, hasModelResponse, activeSessionId, messages.length]);
 
   // Load sessions from storage on mount
   useEffect(() => {
@@ -247,6 +270,38 @@ export function PrdBuilderStudio() {
   const prdMarkdownSource = useMemo(() => {
     return compiledData.readmeMarkdown;
   }, [compiledData]);
+
+  // PRD Completeness & Security Audit Calculations
+  const completenessResult = useMemo(() => {
+    return computePrdCompleteness(prdMarkdownSource);
+  }, [prdMarkdownSource]);
+
+  const securityAuditResult = useMemo(() => {
+    return computePrdSecurityAudit(prdMarkdownSource, compiledData.databaseSchemaSql);
+  }, [prdMarkdownSource, compiledData.databaseSchemaSql]);
+
+  const lastModelMessageId = useMemo(() => {
+    const modelMsgs = messages.filter((m) => m.role === "model");
+    return modelMsgs.length > 0 ? modelMsgs[modelMsgs.length - 1].id : null;
+  }, [messages]);
+
+  const handleDownloadLinearJira = () => {
+    const { csvContent } = generateLinearJiraTasks(compiledData.appName, prdMarkdownSource);
+    const blob = new Blob([csvContent], { type: "text/csv;charset=utf-8" });
+    const url = URL.createObjectURL(blob);
+    const link = document.createElement("a");
+    link.href = url;
+    const fileName = (compiledData.appName || "PRD_Tasks").toLowerCase().replace(/[^a-z0-9]/g, "_");
+    link.download = `${fileName}_Linear_Jira_Tasks.csv`;
+    document.body.appendChild(link);
+    link.click();
+    document.body.removeChild(link);
+    URL.revokeObjectURL(url);
+  };
+
+  const handlePrintPrd = () => {
+    window.print();
+  };
 
   // Scroll chat to bottom helper
   const scrollToBottom = (behavior: ScrollBehavior = "smooth") => {
@@ -315,6 +370,7 @@ export function PrdBuilderStudio() {
     setMessages([]);
     setPromptText("");
     setActiveTab("prd");
+    setManualRightPaneOpen(null);
   };
 
   // Select an existing session from history
@@ -529,18 +585,59 @@ export function PrdBuilderStudio() {
           </div>
 
           {/* Right Header Actions (Shown when PRD is compiled or active) */}
-          <div className="flex items-center gap-2">
+          <div className="flex items-center gap-1.5 sm:gap-2">
             {isRightPaneOpen ? (
               <>
-                <span className="hidden md:inline-flex items-center gap-1.5 text-[11px] text-[#9aa0a6] bg-[#141111] border border-[#241f1f] px-2.5 py-1 rounded-full mr-1 animate-in fade-in">
-                  <span className="w-1.5 h-1.5 rounded-full bg-emerald-400 animate-pulse" />
-                  <span className="text-emerald-400 font-medium">13 Bab Standar Industri</span>
-                </span>
+                {/* 13-Bab Completeness Gauge */}
+                <button
+                  type="button"
+                  onClick={() => setIsCompletenessModalOpen(true)}
+                  className="px-2.5 py-1 rounded-full bg-[#16100E] border border-[#38241F] hover:border-[#D97757] text-[#FAF6F4] text-[11px] font-medium transition flex items-center gap-1.5 cursor-pointer shadow-sm"
+                  title="Klik untuk membuka Checklist 13 Bab PRD"
+                >
+                  <span className="w-2 h-2 rounded-full bg-[#D97757] animate-pulse" />
+                  <span className="font-bold text-[#E88C6F]">{completenessResult.scorePercent}%</span>
+                  <span className="text-[#A89892] hidden md:inline">({completenessResult.completedCount}/13 Bab)</span>
+                </button>
 
+                {/* Pre-production Security & Architecture Audit */}
+                <button
+                  type="button"
+                  onClick={() => setIsAuditModalOpen(true)}
+                  className="px-2.5 py-1 rounded-full bg-[#101815] border border-emerald-900/60 hover:border-emerald-500/60 text-emerald-300 text-[11px] font-medium transition flex items-center gap-1.5 cursor-pointer shadow-sm"
+                  title="Klik untuk melihat Laporan Audit Kesiapan Produksi"
+                >
+                  <ShieldCheck className="w-3.5 h-3.5 text-emerald-400" />
+                  <span className="font-bold">Audit {securityAuditResult.grade}</span>
+                </button>
+
+                {/* Connect to Koda CLI Button */}
+                <button
+                  type="button"
+                  onClick={() => setIsCliModalOpen(true)}
+                  className="px-2.5 py-1.5 rounded-lg bg-[#18110F] hover:bg-[#261713] text-[#FAF6F4] border border-[#38241F] hover:border-[#D97757]/50 text-xs font-semibold transition flex items-center gap-1.5 cursor-pointer"
+                  title="Hubungkan ke Coding Agent CLI di Terminal"
+                >
+                  <Terminal className="w-3.5 h-3.5 text-[#D97757]" />
+                  <span className="hidden sm:inline">Koda CLI</span>
+                </button>
+
+                {/* Linear / Jira Tasks CSV Export */}
+                <button
+                  type="button"
+                  onClick={handleDownloadLinearJira}
+                  className="px-2.5 py-1.5 rounded-lg bg-[#141111] hover:bg-[#1a1616] text-[#C4B2AC] hover:text-white text-xs font-medium transition flex items-center gap-1.5 border border-[#241f1f] cursor-pointer"
+                  title="Unduh Tiket Sprint Linear / Jira (.csv)"
+                >
+                  <FileSpreadsheet className="w-3.5 h-3.5 text-sky-400" />
+                  <span className="hidden lg:inline">Linear/Jira CSV</span>
+                </button>
+
+                {/* Copy Markdown */}
                 <button
                   type="button"
                   onClick={() => handleCopy(prdMarkdownSource, "header_copy")}
-                  className="px-2.5 sm:px-3 py-1.5 rounded-lg bg-[#141111] hover:bg-[#1a1616] text-white text-xs font-medium transition flex items-center gap-1.5 border border-[#241f1f]"
+                  className="p-1.5 sm:px-2.5 sm:py-1.5 rounded-lg bg-[#141111] hover:bg-[#1a1616] text-white text-xs font-medium transition flex items-center gap-1.5 border border-[#241f1f]"
                   title="Salin Dokumen PRD"
                 >
                   {copiedItem === "header_copy" ? (
@@ -548,19 +645,20 @@ export function PrdBuilderStudio() {
                   ) : (
                     <Copy className="w-3.5 h-3.5" />
                   )}
-                  <span className="hidden sm:inline">Salin PRD</span>
+                  <span className="hidden xl:inline">Salin</span>
                 </button>
 
+                {/* Print PDF */}
                 <button
                   type="button"
-                  onClick={handleDownloadPrd}
-                  className="px-2.5 sm:px-3 py-1.5 rounded-lg bg-[#141111] hover:bg-[#1a1616] text-[#f1f3f4] text-xs font-medium transition flex items-center gap-1.5 border border-[#241f1f]"
-                  title="Unduh file .md"
+                  onClick={handlePrintPrd}
+                  className="p-1.5 rounded-lg bg-[#141111] hover:bg-[#1a1616] text-[#C4B2AC] hover:text-white transition border border-[#241f1f] cursor-pointer"
+                  title="Cetak Dokumen PRD Resmi (PDF)"
                 >
-                  <Download className="w-3.5 h-3.5 text-[#9aa0a6]" />
-                  <span className="hidden sm:inline">Unduh .md</span>
+                  <Printer className="w-3.5 h-3.5" />
                 </button>
 
+                {/* Open in PRD Editor */}
                 <button
                   type="button"
                   onClick={handleOpenInEditor}
@@ -568,13 +666,27 @@ export function PrdBuilderStudio() {
                   title="Buka dokumen di PRD Editor dual-pane"
                 >
                   <FileEdit className="w-3.5 h-3.5" />
-                  <span>Buka di Editor</span>
+                  <span className="hidden sm:inline">Editor</span>
                 </button>
               </>
             ) : (
-              <div className="hidden sm:flex items-center gap-1.5 text-xs text-[#80868b] px-3 py-1 rounded-full bg-[#141111] border border-[#241f1f]">
-                <Sparkles className="w-3.5 h-3.5 text-[#408175]" />
-                <span>Kanvas Siap Menunggu Input</span>
+              <div className="flex items-center gap-2">
+                <button
+                  type="button"
+                  onClick={() => {
+                    setManualRightPaneOpen(true);
+                    setActiveTab("database");
+                  }}
+                  className="px-2.5 sm:px-3 py-1.5 rounded-lg bg-[#141111] hover:bg-[#1a1616] text-[#FAF6F4] hover:text-white text-xs font-medium transition flex items-center gap-1.5 border border-[#241f1f] cursor-pointer"
+                  title="Buka panel dan lihat tab Database (ERD & DDL)"
+                >
+                  <Database className="w-3.5 h-3.5 text-sky-400" />
+                  <span>Tab Database (ERD)</span>
+                </button>
+                <div className="hidden md:flex items-center gap-1.5 text-xs text-[#80868b] px-3 py-1 rounded-full bg-[#141111] border border-[#241f1f]">
+                  <Sparkles className="w-3.5 h-3.5 text-[#408175]" />
+                  <span>Kanvas Siap Menunggu Input</span>
+                </div>
               </div>
             )}
           </div>
@@ -598,9 +710,14 @@ export function PrdBuilderStudio() {
               <div className="flex items-center gap-2">
                 <span className="w-2 h-2 rounded-full bg-[#408175] animate-pulse" />
                 <span className="font-semibold text-white">KODA Architect Chat</span>
-                <span className="text-[10px] px-2 py-0.5 rounded-md bg-[#141111] text-[#9aa0a6] font-mono border border-[#241f1f]">
-                  {isRightPaneOpen ? "Dual-Sync Active" : "Fullscreen Focus"}
-                </span>
+                <button
+                  type="button"
+                  onClick={() => setManualRightPaneOpen((prev) => (prev === null ? !isRightPaneOpen : !prev))}
+                  className="text-[10px] px-2 py-0.5 rounded-md bg-[#141111] text-[#9aa0a6] hover:text-white font-mono border border-[#241f1f] transition cursor-pointer flex items-center gap-1"
+                  title={isRightPaneOpen ? "Sembunyikan panel spesifikasi untuk fokus chat" : "Buka panel spesifikasi (PRD, Flowchart, Database ERD)"}
+                >
+                  <span>{isRightPaneOpen ? "Dual-Sync (Tutup Panel)" : "Buka Panel (ERD & PRD)"}</span>
+                </button>
               </div>
 
               <div className="flex items-center gap-2">
@@ -642,8 +759,20 @@ export function PrdBuilderStudio() {
                     </p>
                   </div>
 
+                  {/* 1. Smart Guided Questionnaire Wizard */}
+                  <PrdQuestionnaireWizard onSelectPrompt={handleSendMessageDirect} />
+
+                  {/* 2. Ready-Made Idea Cards Section */}
+                  <div className="flex items-center gap-3 pt-2">
+                    <div className="h-px flex-1 bg-[#241F1F]" />
+                    <span className="text-[11px] font-semibold text-[#80868B] uppercase tracking-wider">
+                      Atau Pilih Kasus Proyek Siap Pakai:
+                    </span>
+                    <div className="h-px flex-1 bg-[#241F1F]" />
+                  </div>
+
                   {/* Starter Idea Cards */}
-                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 pt-2">
+                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 pt-1">
                     {STARTER_PRD_IDEAS.map((item, idx) => {
                       const IconComp = item.icon;
                       return (
@@ -699,6 +828,15 @@ export function PrdBuilderStudio() {
                         }}
                         isTyping={typingMessageId === msg.id}
                       />
+
+                      {/* Interactive Decision Chips for latest Assistant message */}
+                      {msg.role === "model" && msg.id === lastModelMessageId && (
+                        <PrdDecisionChips
+                          lastMessageContent={msg.content}
+                          onSelectOption={handleSendMessageDirect}
+                          disabled={isLoading}
+                        />
+                      )}
                     </div>
                   </div>
                 ))
@@ -772,7 +910,7 @@ export function PrdBuilderStudio() {
                     }`}
                   >
                     <Database className="w-3.5 h-3.5 text-sky-400" />
-                    <span>PostgreSQL Schema</span>
+                    <span>Database (ERD & DDL)</span>
                   </button>
 
                   <button
@@ -786,6 +924,19 @@ export function PrdBuilderStudio() {
                   >
                     <ImageIcon className="w-3.5 h-3.5 text-rose-400" />
                     <span>UI Mockups</span>
+                  </button>
+
+                  <button
+                    type="button"
+                    onClick={() => setActiveTab("mockup")}
+                    className={`flex items-center gap-2 px-3 py-1.5 rounded-xl text-xs font-medium transition cursor-pointer shrink-0 ${
+                      activeTab === "mockup"
+                        ? "bg-[#1a1616] text-white border border-[#241f1f] shadow-sm"
+                        : "text-[#9aa0a6] hover:text-white hover:bg-[#141111]"
+                    }`}
+                  >
+                    <Smartphone className="w-3.5 h-3.5 text-[#D97757]" />
+                    <span>Live Prototype</span>
                   </button>
                 </div>
 
@@ -814,6 +965,35 @@ export function PrdBuilderStudio() {
                         }`}
                       >
                         Raw
+                      </button>
+                    </div>
+                  </div>
+                )}
+
+                {activeTab === "database" && (
+                  <div className="flex items-center gap-1.5">
+                    <div className="flex items-center bg-[#141111] p-0.5 rounded-lg border border-[#241f1f]">
+                      <button
+                        type="button"
+                        onClick={() => setDbViewMode("erd")}
+                        className={`px-2.5 py-1 rounded-md text-[11px] font-medium transition cursor-pointer ${
+                          dbViewMode === "erd"
+                            ? "bg-[#1a1616] text-[#FAF6F4] font-bold"
+                            : "text-[#80868b] hover:text-white"
+                        }`}
+                      >
+                        Visual ERD
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => setDbViewMode("ddl")}
+                        className={`px-2.5 py-1 rounded-md text-[11px] font-medium transition cursor-pointer ${
+                          dbViewMode === "ddl"
+                            ? "bg-[#1a1616] text-[#FAF6F4] font-bold"
+                            : "text-[#80868b] hover:text-white"
+                        }`}
+                      >
+                        DDL SQL
                       </button>
                     </div>
                   </div>
@@ -931,10 +1111,10 @@ export function PrdBuilderStudio() {
                       </div>
                     )}
 
-                    {/* TAB 3: POSTGRESQL SCHEMA */}
+                    {/* TAB 3: POSTGRESQL SCHEMA (Visual ERD vs DDL SQL) */}
                     {activeTab === "database" && (
-                      <div className="space-y-6 max-w-4xl mx-auto">
-                        <div className="rounded-2xl border border-[#241f1f] bg-[#141111] p-4 flex items-center justify-between">
+                      <div className="space-y-4 max-w-5xl mx-auto h-full flex flex-col">
+                        <div className="rounded-2xl border border-[#241f1f] bg-[#141111] p-4 flex items-center justify-between shrink-0">
                           <div>
                             <h3 className="text-sm font-semibold text-white">
                               Skema PostgreSQL DDL (Normalisasi 3NF)
@@ -957,15 +1137,31 @@ export function PrdBuilderStudio() {
                           </button>
                         </div>
 
-                        <div className="rounded-2xl border border-[#241f1f] bg-[#0B0909] p-5 font-mono text-xs text-sky-300 overflow-x-auto shadow-inner leading-relaxed">
-                          <pre className="whitespace-pre">
-                            {compiledData.databaseSchemaSql}
-                          </pre>
-                        </div>
+                        {dbViewMode === "erd" ? (
+                          <div className="flex-1 min-h-[460px]">
+                            <VisualErdDiagram sql={compiledData.databaseSchemaSql} />
+                          </div>
+                        ) : (
+                          <div className="rounded-2xl border border-[#241f1f] bg-[#0B0909] p-5 font-mono text-xs text-sky-300 overflow-x-auto shadow-inner leading-relaxed">
+                            <pre className="whitespace-pre">
+                              {compiledData.databaseSchemaSql}
+                            </pre>
+                          </div>
+                        )}
                       </div>
                     )}
 
-                    {/* TAB 4: UI MOCKUPS */}
+                    {/* TAB 4: LIVE WIREFRAME PROTOTYPE */}
+                    {activeTab === "mockup" && (
+                      <div className="space-y-6 max-w-5xl mx-auto h-full flex flex-col">
+                        <InteractivePrototypePreview
+                          appName={compiledData.appName}
+                          architectureSummary={compiledData.architectureSummary}
+                        />
+                      </div>
+                    )}
+
+                    {/* TAB 5: UI MOCKUPS (DRIBBBLE) */}
                     {activeTab === "designs" && (
                       <div className="space-y-6 max-w-4xl mx-auto">
                         <div className="rounded-2xl border border-[#241f1f] bg-[#141111] p-4 flex items-center justify-between">
@@ -997,6 +1193,28 @@ export function PrdBuilderStudio() {
           )}
         </div>
       </div>
+
+      {/* 4. MODALS (Completeness, CLI Connect, Security Audit) */}
+      <PrdCompletenessModal
+        isOpen={isCompletenessModalOpen}
+        onClose={() => setIsCompletenessModalOpen(false)}
+        completeness={completenessResult}
+        onCompleteChapter={handleSendMessageDirect}
+      />
+
+      <KodaCliConnectModal
+        isOpen={isCliModalOpen}
+        onClose={() => setIsCliModalOpen(false)}
+        sessionId={activeSessionId || "session-booking-kos"}
+        appName={compiledData.appName}
+      />
+
+      <PrdSecurityAuditModal
+        isOpen={isAuditModalOpen}
+        onClose={() => setIsAuditModalOpen(false)}
+        auditResult={securityAuditResult}
+        onFixWithAi={handleSendMessageDirect}
+      />
     </div>
   );
 }
